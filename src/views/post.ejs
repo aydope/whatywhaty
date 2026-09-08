@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>پست <%= post.author.username %> · واتی‌واتی</title>
+  <link href="https://cdn.jsdelivr.net/gh/rastikerdar/sahel-font@v3.4.0/dist/fonts/Sahel.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Sahel', 'Vazirmatn', 'sans-serif'],
+          },
+          colors: {
+            primary: '#0095f6',
+            danger: '#ed4956',
+            success: '#22c55e',
+            dark: '#1a1a1a',
+            muted: '#8e8e8e',
+            light: '#fafafa',
+            border: '#e8e8e8',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Sahel", "Vazirmatn", sans-serif;
+      background: #fafafa;
+      color: #1a1a1a;
+      direction: rtl;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    .loading-spinner {
+      border: 3px solid #e8e8e8;
+      border-top-color: #0095f6;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #sidebar {
+      transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #sidebar.open {
+      right: 0;
+    }
+
+    #sidebarOverlay {
+      transition: all 0.3s ease;
+    }
+
+    #sidebarOverlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    #dropdownMenu {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #dropdownMenu.open {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    #confirmOverlay,
+    #deleteConfirmOverlay {
+      display: none;
+    }
+
+    #confirmOverlay.active,
+    #deleteConfirmOverlay.active {
+      display: flex;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-weight: 500;
+      z-index: 99999;
+      animation: slideUp 0.3s ease;
+      font-family: "Sahel", "Vazirmatn", sans-serif;
+      font-size: 0.9rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .toast-error {
+      background: #fee8ea;
+      color: #ed4956;
+      border: 1px solid #fcc;
+    }
+
+    .toast-success {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #c8e6c9;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    .animate-scale-in {
+      animation: scaleIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .reply-form {
+      display: none;
+      margin-top: 10px;
+      padding-right: 46px;
+      animation: slideDown 0.25s ease;
+    }
+
+    .reply-form.show {
+      display: block;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes highlightNew {
+      0% { background: #e8f4fd; }
+      100% { background: #f8f9fa; }
+    }
+
+    .new-comment {
+      animation: highlightNew 2s ease;
+    }
+
+    .like-btn-post {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 28px;
+      border-radius: 50px;
+      border: 2px solid #e8e8e8;
+      background: white;
+      color: #8e8e8e;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .like-btn-post:hover {
+      border-color: #fcc;
+      background: #fff5f5;
+      color: #ed4956;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(237, 73, 86, 0.1);
+    }
+
+    .like-btn-post.liked {
+      border-color: #ed4956;
+      background: #ed4956;
+      color: white;
+      box-shadow: 0 4px 16px rgba(237, 73, 86, 0.25);
+    }
+
+    .like-btn-post.liked:hover {
+      background: #dc3545;
+      border-color: #dc3545;
+      color: white;
+    }
+
+    .like-btn-post i {
+      font-size: 1.3rem;
+      transition: transform 0.2s;
+    }
+
+    .like-btn-post.liked i {
+      animation: heartBeat 0.3s ease;
+    }
+
+    @keyframes heartBeat {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.3); }
+      100% { transform: scale(1); }
+    }
+
+    .comment-like-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: 50px;
+      border: none;
+      background: transparent;
+      color: #8e8e8e;
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .comment-like-btn:hover {
+      background: #ffe4e6;
+      color: #ed4956;
+    }
+
+    .comment-like-btn.liked {
+      color: #ed4956;
+      background: #fff1f2;
+    }
+
+    .comment-like-btn i {
+      font-size: 1rem;
+      transition: transform 0.2s;
+    }
+
+    .comment-like-btn.liked i {
+      animation: heartBeat 0.3s ease;
+    }
+  </style>
+</head>
+<body class="font-sans bg-light text-dark antialiased overflow-x-hidden">
+
+  <header class="bg-white/80 backdrop-blur-lg border-b border-border sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5 no-underline group">
+        <span class="inline-flex items-center justify-center w-10 h-10 bg-dark text-white font-extrabold text-lg rounded-xl rotate-3 shadow-md transition-all group-hover:rotate-0 group-hover:scale-110 tracking-tight flex-shrink-0">و</span>
+        <span class="font-bold text-lg tracking-tight bg-gradient-to-l from-dark to-indigo-600 bg-clip-text text-transparent">واتی‌واتی</span>
+      </a>
+
+      <div class="flex items-center gap-1">
+        <a href="/" class="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-dark hover:bg-gray-50 transition-all">
+          <i class="bi bi-house-door text-lg"></i>
+          <span>خانه</span>
+        </a>
+        <a href="/explore" class="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-dark hover:bg-gray-50 transition-all">
+          <i class="bi bi-compass text-lg"></i>
+          <span>اکتشاف</span>
+        </a>
+        <a href="/messages" class="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-dark hover:bg-gray-50 transition-all">
+          <i class="bi bi-chat-dots text-lg"></i>
+          <span>پیام‌ها</span>
+        </a>
+
+        <% if (user) { %>
+        <div class="relative" id="profileDropdown">
+          <button class="w-9 h-9 rounded-full cursor-pointer border-2 border-transparent hover:border-primary transition-all flex items-center justify-center font-bold text-sm text-white bg-gradient-to-br from-primary to-indigo-600 flex-shrink-0 select-none" onclick="toggleDropdown()">
+            <%= user.username.charAt(0).toUpperCase() %>
+          </button>
+
+          <div class="absolute top-full left-0 mt-2 bg-white rounded-2xl border border-border shadow-xl min-w-[220px] py-2 opacity-0 invisible -translate-y-2 scale-95 z-50" id="dropdownMenu">
+            <div class="px-4 py-3 flex items-center gap-3 border-b border-gray-100">
+              <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-base text-white bg-gradient-to-br from-primary to-indigo-600 flex-shrink-0 select-none">
+                <%= user.username.charAt(0).toUpperCase() %>
+              </div>
+              <div>
+                <div class="font-semibold text-sm text-dark"><%= user.username %></div>
+                <div class="text-xs text-muted">@<%= user.username %></div>
+              </div>
+            </div>
+
+            <a href="/@<%= user.username %>" class="flex items-center gap-3 px-4 py-2.5 text-dark no-underline text-sm font-medium hover:bg-gray-50 transition-all cursor-pointer">
+              <i class="bi bi-person text-lg text-gray-500"></i>
+              پروفایل من
+            </a>
+
+            <div class="h-px bg-gray-100 my-1"></div>
+
+            <button onclick="handleLogout()" class="flex items-center gap-3 px-4 py-2.5 text-danger no-underline text-sm font-medium hover:bg-red-50 transition-all cursor-pointer border-none bg-none w-full text-right font-sans">
+              <i class="bi bi-box-arrow-right text-lg"></i>
+              خروج از حساب
+            </button>
+          </div>
+        </div>
+        <% } %>
+
+        <button class="md:hidden bg-none border-none text-2xl text-dark cursor-pointer p-1.5 rounded-lg hover:bg-gray-100 transition-all" onclick="openSidebar()">
+          <i class="bi bi-list"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="fixed inset-0 bg-black/40 z-[999] opacity-0 invisible" id="sidebarOverlay" onclick="closeSidebar()"></div>
+  <div class="fixed top-0 -right-[320px] w-[300px] h-full bg-white z-[1000] p-5 overflow-y-auto shadow-2xl" id="sidebar">
+    <div class="flex items-center justify-between pb-4 border-b border-gray-100 mb-4">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 bg-dark text-white font-extrabold text-sm rounded-xl rotate-3 flex items-center justify-center flex-shrink-0">و</div>
+        <span class="font-bold text-base bg-gradient-to-l from-dark to-indigo-600 bg-clip-text text-transparent">واتی‌واتی</span>
+      </div>
+      <button class="bg-none border-none text-xl text-gray-600 cursor-pointer p-1 rounded-lg hover:bg-gray-100" onclick="closeSidebar()">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+
+    <div class="flex items-center gap-3 px-3.5 py-3 mb-3 rounded-xl bg-gray-50">
+      <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-indigo-600 text-white flex items-center justify-center font-bold text-base flex-shrink-0"><%= user ? user.username.charAt(0).toUpperCase() : '?' %></div>
+      <div>
+        <div class="font-semibold text-sm text-dark"><%= user ? user.username : 'کاربر' %></div>
+        <div class="text-xs text-muted"><%= user ? '@' + user.username : 'مهمان' %></div>
+      </div>
+    </div>
+
+    <a href="/" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-gray-600 no-underline text-sm font-medium hover:bg-gray-50 transition-all mb-1">
+      <i class="bi bi-house-door text-lg w-6"></i> خانه
+    </a>
+    <a href="/explore" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-gray-600 no-underline text-sm font-medium hover:bg-gray-50 transition-all mb-1">
+      <i class="bi bi-compass text-lg w-6"></i> اکتشاف
+    </a>
+    <a href="/messages" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-gray-600 no-underline text-sm font-medium hover:bg-gray-50 transition-all mb-1">
+      <i class="bi bi-chat-dots text-lg w-6"></i> پیام‌ها
+    </a>
+
+    <div class="h-px bg-gray-100 my-2"></div>
+
+    <a href="/@<%= user ? user.username : '' %>" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-dark no-underline text-sm font-medium bg-gray-50 transition-all mb-1">
+      <i class="bi bi-person text-lg w-6"></i> پروفایل
+    </a>
+
+    <div class="h-px bg-gray-100 my-2"></div>
+
+    <button onclick="handleLogout()" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-danger no-underline text-sm font-medium hover:bg-red-50 transition-all cursor-pointer border-none bg-none w-full text-right font-sans">
+      <i class="bi bi-box-arrow-right text-lg w-6"></i> خروج از حساب
+    </button>
+  </div>
+
+  <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] items-center justify-center" id="confirmOverlay">
+    <div class="bg-white rounded-2xl px-8 py-8 max-w-[380px] w-[90%] text-center shadow-2xl animate-scale-in">
+      <div class="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+        <i class="bi bi-box-arrow-right text-3xl text-danger"></i>
+      </div>
+      <h3 class="text-lg font-bold text-dark mb-2">خروج از حساب</h3>
+      <p class="text-sm text-muted mb-6 leading-relaxed">آیا مطمئن هستید که می‌خواهید از حساب خود خارج شوید؟</p>
+      <div class="flex gap-2.5 justify-center">
+        <button class="px-7 py-2.5 rounded-xl font-sans text-sm font-semibold cursor-pointer border border-border bg-white text-dark hover:bg-gray-50 transition-all" onclick="closeConfirm()">انصراف</button>
+        <button class="px-7 py-2.5 rounded-xl font-sans text-sm font-semibold cursor-pointer border-none bg-danger text-white hover:bg-red-600 transition-all" id="confirmLogoutBtn">خروج</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9998] items-center justify-center" id="deleteConfirmOverlay">
+    <div class="bg-white rounded-2xl px-8 py-8 max-w-[380px] w-[90%] text-center shadow-2xl animate-scale-in">
+      <div class="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+        <i class="bi bi-trash text-3xl text-danger"></i>
+      </div>
+      <h3 class="text-lg font-bold text-dark mb-2" id="deleteConfirmTitle">حذف</h3>
+      <p class="text-sm text-muted mb-6 leading-relaxed" id="deleteConfirmText">آیا مطمئن هستید؟</p>
+      <div class="flex gap-2.5 justify-center">
+        <button class="px-7 py-2.5 rounded-xl font-sans text-sm font-semibold cursor-pointer border border-border bg-white text-dark hover:bg-gray-50 transition-all" onclick="closeDeleteConfirm()">انصراف</button>
+        <button class="px-7 py-2.5 rounded-xl font-sans text-sm font-semibold cursor-pointer border-none bg-danger text-white hover:bg-red-600 transition-all" id="confirmDeleteBtn">حذف</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="max-w-2xl mx-auto px-4 py-6">
+
+    <a href="/" class="inline-flex items-center gap-2 text-primary font-medium no-underline mb-4 hover:text-blue-700 transition-all">
+      <i class="bi bi-arrow-right"></i>
+      بازگشت به خانه
+    </a>
+
+    <div class="bg-white rounded-2xl border border-border p-6 mb-5 shadow-sm">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg text-white flex-shrink-0 select-none bg-gradient-to-br from-indigo-500 to-purple-600">
+          <%= post.author.username.charAt(0).toUpperCase() %>
+        </div>
+        <div class="flex-1">
+          <a href="/@<%= post.author.username %>" class="font-semibold text-sm text-dark no-underline hover:text-primary transition-colors">@<%= post.author.username %></a>
+          <div class="text-xs text-muted mt-0.5"><%= new Date(post.createdAt).toLocaleString('fa-IR-u-nu-latn') %></div>
+        </div>
+        <% if (user && (user._id.toString() === post.author._id.toString() || user.role === 'admin')) { %>
+          <button class="bg-none border-none text-gray-400 hover:text-danger cursor-pointer p-2 rounded-lg hover:bg-red-50 transition-all" onclick="openDeleteConfirm('post')" title="حذف پست">
+            <i class="bi bi-trash"></i>
+          </button>
+        <% } %>
+      </div>
+
+      <div class="text-base leading-relaxed text-dark whitespace-pre-wrap break-words mb-4"><%= post.content %></div>
+
+      <div class="flex items-center gap-6 py-3 border-t border-gray-100 mb-3">
+        <span class="text-sm text-muted"><strong class="text-dark font-semibold" id="likesCount"><%= post.likesCount || post.likes?.length || 0 %></strong> لایک</span>
+        <span class="text-sm text-muted"><strong class="text-dark font-semibold" id="commentsCount"><%= comments ? comments.length : 0 %></strong> نظر</span>
+      </div>
+
+      <% if (user) { %>
+        <% const isPostLiked = post.likes && post.likes.some(function(l) { return (l._id || l).toString() === user._id.toString(); }); %>
+        <button id="likeBtn" class="like-btn-post <%= isPostLiked ? 'liked' : '' %>" onclick="togglePostLike()">
+          <i class="bi <%= isPostLiked ? 'bi-heart-fill' : 'bi-heart' %>"></i>
+          <span id="likeText"><%= isPostLiked ? 'لایک شده' : 'لایک' %></span>
+        </button>
+      <% } %>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-border p-6 shadow-sm">
+      <h3 class="font-bold text-base text-dark mb-4">نظرات (<span id="totalComments"><%= totalComments ? totalComments : 0 %></span>)</h3>
+
+      <% if (user) { %>
+        <div class="mb-4">
+          <textarea id="commentContent" placeholder="نظر خود را بنویسید..." maxlength="280" oninput="updateCharCount()" rows="3" class="w-full px-4 py-3 border border-border rounded-xl resize-y min-h-[60px] font-sans text-sm transition-all bg-gray-50 outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10"></textarea>
+          <div class="flex items-center justify-between mt-2">
+            <span class="text-xs text-gray-400"><span id="charCount">0</span>/280</span>
+            <button class="bg-primary text-white border-none px-6 py-2 rounded-lg font-sans text-sm font-semibold cursor-pointer hover:bg-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed" id="submitCommentBtn" onclick="submitComment()">ارسال نظر</button>
+          </div>
+        </div>
+      <% } %>
+
+      <div id="commentsList" class="mt-4">
+        <% if (comments && comments.length > 0) { %>
+          <% comments.forEach(function(comment) { %>
+            <%
+            const author = comment.author || {};
+            const authorUsername = author.username || 'unknown';
+            const authorIdStr = (author._id || author).toString ? (author._id || author).toString() : '';
+            const isCommentLiked = comment.likes && user && comment.likes.some(function(l) { return (l._id || l).toString() === user._id.toString(); });
+            const avatarColor = ['#f09433','#e6683c','#dc2743','#cc2366','#bc1888','#0095f6','#34a853','#ea4335','#8b5cf6','#ec4899'][Math.abs(authorUsername.charCodeAt(0) || 0) % 10];
+            const replyCount = (comment.replies && comment.replies.length > 0) ? comment.replies.length : 0;
+            %>
+            <div class="bg-gray-50 rounded-xl px-4 py-3.5 mb-2 transition-all hover:bg-gray-100" data-comment-id="<%= comment._id %>">
+              <div class="flex items-center gap-2.5 mb-1">
+                <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white flex-shrink-0 select-none" style="background:<%= avatarColor %>;"><%= authorUsername.charAt(0).toUpperCase() %></div>
+                <a href="/@<%= authorUsername %>" class="font-semibold text-sm text-dark no-underline hover:text-primary transition-colors">@<%= authorUsername %></a>
+                <span class="text-xs text-gray-400 mr-auto"><%= new Date(comment.createdAt).toLocaleString('fa-IR-u-nu-latn') %></span>
+                <% if (user && (user._id.toString() === authorIdStr || user.role === 'admin')) { %>
+                  <button class="bg-none border-none text-gray-400 hover:text-danger cursor-pointer p-1 rounded-md hover:bg-red-50 transition-all" onclick="openDeleteConfirm('comment', '<%= comment._id %>')" title="حذف">
+                    <i class="bi bi-trash text-sm"></i>
+                  </button>
+                <% } %>
+              </div>
+              <div class="text-sm leading-relaxed text-dark whitespace-pre-wrap break-words mb-2 pr-11"><%= comment.content %></div>
+              <div class="flex items-center gap-3 pr-11">
+                <button class="comment-like-btn <%= isCommentLiked ? 'liked' : '' %>" onclick="toggleCommentLike('<%= comment._id %>')">
+                  <i class="bi <%= isCommentLiked ? 'bi-heart-fill' : 'bi-heart' %>"></i>
+                  <span id="commentLikes-<%= comment._id %>"><%= comment.likes ? comment.likes.length : 0 %></span>
+                </button>
+                <button class="flex items-center gap-1 text-xs font-medium text-muted bg-none border-none cursor-pointer px-2 py-1 rounded-md hover:bg-gray-200 transition-all font-sans" onclick="showReplyForm('<%= comment._id %>')">
+                  <i class="bi bi-reply text-sm"></i> پاسخ
+                </button>
+                <% if (replyCount > 0) { %>
+                  <button class="flex items-center gap-1 text-xs font-medium text-muted bg-none border-none cursor-pointer px-2 py-1 rounded-md hover:bg-gray-200 transition-all font-sans" onclick="loadReplies('<%= comment._id %>')" id="loadRepliesBtn-<%= comment._id %>">
+                    <i class="bi bi-chevron-down text-sm"></i>
+                    <span id="replyCount-<%= comment._id %>"><%= replyCount %></span> پاسخ
+                  </button>
+                <% } %>
+              </div>
+
+              <div id="replyForm-<%= comment._id %>" class="reply-form">
+                <textarea id="replyContent-<%= comment._id %>" placeholder="پاسخ خود را بنویسید..." maxlength="280" rows="2" class="w-full px-3.5 py-2.5 border border-border rounded-lg resize-y min-h-[44px] font-sans text-sm transition-all bg-gray-50 outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10"></textarea>
+                <div class="flex gap-2 mt-2">
+                  <button class="px-4 py-1.5 rounded-lg font-sans text-xs font-semibold cursor-pointer border-none bg-primary text-white hover:bg-blue-600 transition-all" onclick="submitReply('<%= comment._id %>')">پاسخ</button>
+                  <button class="px-4 py-1.5 rounded-lg font-sans text-xs font-semibold cursor-pointer border-none bg-gray-200 text-gray-600 hover:bg-gray-300 transition-all" onclick="hideReplyForm('<%= comment._id %>')">انصراف</button>
+                </div>
+              </div>
+
+              <div id="replies-<%= comment._id %>" class="replies-container mt-2 mr-11 pr-4 border-r-2 border-gray-200" style="display:none;"></div>
+            </div>
+          <% }); %>
+        <% } else { %>
+          <div class="text-center py-12 text-gray-400" id="emptyComments">
+            <i class="bi bi-chat-dots text-4xl text-gray-300 block mb-3"></i>
+            <p class="text-sm">هنوز نظری ثبت نشده است. اولین نفر باشید!</p>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+  </main>
+
+  <%- include('partials/scripts') %>
+  <script>
+    (function() {
+      const POST_ID = '<%= post._id %>';
+      const CURRENT_USER_ID = '<%= user ? user._id : "" %>';
+      const IS_ADMIN = <%= user && user.role === 'admin' ? 'true' : 'false' %>;
+
+      window.openSidebar = function() {
+        document.getElementById('sidebar').classList.add('open');
+        document.getElementById('sidebarOverlay').classList.add('active');
+        document.body.style.overflow = 'hidden';
+      };
+
+      window.closeSidebar = function() {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebarOverlay').classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.toggleDropdown = function() {
+        const menu = document.getElementById("dropdownMenu");
+        menu.classList.toggle("open");
+      };
+
+      document.addEventListener("click", function(e) {
+        const dropdown = document.getElementById("profileDropdown");
+        if (dropdown && !dropdown.contains(e.target)) {
+          document.getElementById("dropdownMenu").classList.remove("open");
+        }
+      });
+
+      window.closeConfirm = function() {
+        document.getElementById("confirmOverlay").classList.remove("active");
+      };
+
+      window.handleLogout = function() {
+        window.closeSidebar();
+        window.closeConfirm();
+        setTimeout(() => {
+          document.getElementById("confirmOverlay").classList.add("active");
+        }, 200);
+      };
+
+      document.getElementById("confirmLogoutBtn").addEventListener("click", async function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = "در حال خروج...";
+
+        try {
+          const response = await fetch("/auth/logout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            window.location.href = "/auth/login";
+          } else {
+            showToast(data.message || "خطا در خروج", "error");
+            window.closeConfirm();
+            btn.disabled = false;
+            btn.textContent = "خروج";
+          }
+        } catch (error) {
+          showToast("خطا در ارتباط با سرور", "error");
+          window.closeConfirm();
+          btn.disabled = false;
+          btn.textContent = "خروج";
+        }
+      });
+
+      document.getElementById("confirmOverlay").addEventListener("click", function(e) {
+        if (e.target === this) window.closeConfirm();
+      });
+
+      let deleteTarget = null;
+      let deleteType = null;
+
+      window.openDeleteConfirm = function(type, id) {
+        deleteType = type;
+        deleteTarget = id || null;
+
+        const title = document.getElementById('deleteConfirmTitle');
+        const text = document.getElementById('deleteConfirmText');
+
+        if (type === 'post') {
+          title.textContent = 'حذف پست';
+          text.textContent = 'آیا مطمئن هستید که می‌خواهید این پست را حذف کنید؟';
+        } else {
+          title.textContent = 'حذف نظر';
+          text.textContent = 'آیا مطمئن هستید که می‌خواهید این نظر را حذف کنید؟';
+        }
+
+        document.getElementById('deleteConfirmOverlay').classList.add('active');
+      };
+
+      window.closeDeleteConfirm = function() {
+        document.getElementById('deleteConfirmOverlay').classList.remove('active');
+        deleteTarget = null;
+        deleteType = null;
+      };
+
+      document.getElementById('confirmDeleteBtn').addEventListener('click', async function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = 'در حال حذف...';
+
+        try {
+          if (deleteType === 'post') {
+            const r = await tokenManager.fetchWithAuth('/posts/' + POST_ID, { method: 'DELETE' });
+            const d = await r.json();
+            if (d.success) {
+              showToast('پست حذف شد', 'success');
+              window.closeDeleteConfirm();
+              setTimeout(function() { window.location.href = '/'; }, 1000);
+            } else {
+              showToast(d.message || 'خطا', 'error');
+              btn.disabled = false;
+              btn.textContent = 'حذف';
+            }
+          } else if (deleteType === 'comment' && deleteTarget) {
+            const r = await tokenManager.fetchWithAuth('/comments/' + deleteTarget, { method: 'DELETE' });
+            const d = await r.json();
+            if (d.success) {
+              const e = document.querySelector('[data-comment-id="' + deleteTarget + '"]');
+              if (e) {
+                e.style.opacity = '0';
+                e.style.transform = 'scale(0.9)';
+                e.style.transition = 'all 0.3s';
+                setTimeout(function() { e.remove(); updateCommentsCount(-1); }, 300);
+              }
+              showToast('حذف شد', 'success');
+              window.closeDeleteConfirm();
+            } else {
+              showToast(d.message || 'خطا', 'error');
+              btn.disabled = false;
+              btn.textContent = 'حذف';
+            }
+          }
+        } catch (e) {
+          showToast('خطا', 'error');
+          btn.disabled = false;
+          btn.textContent = 'حذف';
+        }
+      });
+
+      document.getElementById('deleteConfirmOverlay').addEventListener('click', function(e) {
+        if (e.target === this) window.closeDeleteConfirm();
+      });
+
+      function escapeHtml(text) {
+        if (!text) return "";
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      function timeAgo(date) {
+        if (!date) return "";
+        const now = new Date();
+        const past = new Date(date);
+        const diff = Math.floor((now - past) / 1000);
+
+        if (diff < 60) return "همین الان";
+        if (diff < 3600) return Math.floor(diff / 60) + " دقیقه پیش";
+        if (diff < 86400) return Math.floor(diff / 3600) + " ساعت پیش";
+        if (diff < 604800) return Math.floor(diff / 86400) + " روز پیش";
+        return past.toLocaleDateString("fa-IR-u-nu-latn");
+      }
+
+      function showToast(msg, type) {
+        type = type || "success";
+        const old = document.querySelector(".toast");
+        if (old) old.remove();
+
+        const toast = document.createElement("div");
+        toast.className = "toast " + (type === "error" ? "toast-error" : "toast-success");
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+
+        setTimeout(() => toast.remove(), 3000);
+      }
+
+      function formatCount(c) {
+        if (!c && c !== 0) return '0';
+        if (c >= 1000000) return (c / 1000000).toFixed(1) + 'M';
+        if (c >= 1000) return (c / 1000).toFixed(1) + 'K';
+        return c.toString();
+      }
+
+      window.togglePostLike = async function() {
+        if (!CURRENT_USER_ID) { showToast('لطفاً وارد شوید', 'error'); return; }
+        try {
+          const r = await tokenManager.fetchWithAuth('/posts/' + POST_ID + '/like', { method: 'POST' });
+          const d = await r.json();
+          if (d.success) updatePostLikeUI(d.liked, d.likesCount);
+          else showToast(d.message || 'خطا', 'error');
+        } catch (e) { showToast('خطا', 'error'); }
+      };
+
+      function updatePostLikeUI(l, c) {
+        const b = document.getElementById('likeBtn');
+        const t = document.getElementById('likeText');
+        const ce = document.getElementById('likesCount');
+        if (l) {
+          b.classList.add('liked');
+          b.querySelector('i').className = 'bi bi-heart-fill';
+          t.textContent = 'لایک شده';
+        } else {
+          b.classList.remove('liked');
+          b.querySelector('i').className = 'bi bi-heart';
+          t.textContent = 'لایک';
+        }
+        ce.textContent = formatCount(c);
+      }
+
+      window.toggleCommentLike = async function(cid) {
+        if (!CURRENT_USER_ID) { showToast('لطفاً وارد شوید', 'error'); return; }
+        try {
+          const r = await tokenManager.fetchWithAuth('/comments/' + cid + '/like', { method: 'POST' });
+          const d = await r.json();
+          if (d.success) updateCommentLikeUI(cid, d.liked, d.likesCount);
+          else showToast(d.message || 'خطا', 'error');
+        } catch (e) { showToast('خطا', 'error'); }
+      };
+
+      function updateCommentLikeUI(cid, l, c) {
+        const s = document.getElementById('commentLikes-' + cid);
+        if (s) s.textContent = formatCount(c);
+
+        const commentItem = document.querySelector('[data-comment-id="' + cid + '"]');
+        if (!commentItem) return;
+
+        const likeBtn = commentItem.querySelector('.comment-like-btn');
+        if (likeBtn) {
+          if (l) {
+            likeBtn.classList.add('liked');
+            likeBtn.querySelector('i').className = 'bi bi-heart-fill';
+          } else {
+            likeBtn.classList.remove('liked');
+            likeBtn.querySelector('i').className = 'bi bi-heart';
+          }
+        }
+      }
+
+      window.showReplyForm = function(cid) {
+        document.querySelectorAll('.reply-form.show').forEach(function(f) {
+          f.classList.remove('show');
+        });
+        const f = document.getElementById('replyForm-' + cid);
+        if (f) {
+          f.classList.add('show');
+          setTimeout(function() {
+            document.getElementById('replyContent-' + cid)?.focus();
+          }, 100);
+        }
+      };
+
+      window.hideReplyForm = function(cid) {
+        const f = document.getElementById('replyForm-' + cid);
+        if (f) {
+          f.classList.remove('show');
+          const t = document.getElementById('replyContent-' + cid);
+          if (t) t.value = '';
+        }
+      };
+
+      window.loadReplies = async function(commentId) {
+        const container = document.getElementById('replies-' + commentId);
+        const btn = document.getElementById('loadRepliesBtn-' + commentId);
+        if (container.style.display === 'block') {
+          container.style.display = 'none';
+          if (btn) btn.innerHTML = '<i class="bi bi-chevron-down text-sm"></i> <span id="replyCount-' + commentId + '">...</span> پاسخ';
+          return;
+        }
+        container.style.display = 'block';
+        if (btn) btn.innerHTML = '<i class="bi bi-chevron-up text-sm"></i> مخفی کردن';
+        if (container.children.length > 0) return;
+        container.innerHTML = '<div style="text-align:center;padding:12px;"><div class="loading-spinner"></div></div>';
+        try {
+          const resp = await fetch('/comments/' + commentId + '/replies');
+          const data = await resp.json();
+          if (data.success) {
+            container.innerHTML = '';
+            data.replies.forEach(function(r) {
+              const el = createCommentElement(r, 1);
+              container.appendChild(el);
+            });
+          } else container.innerHTML = '<p class="text-sm text-gray-400 text-center py-2">خطا در بارگذاری</p>';
+        } catch (e) { container.innerHTML = '<p class="text-sm text-gray-400 text-center py-2">خطا در بارگذاری</p>'; }
+      };
+
+      window.submitReply = async function(cid) {
+        if (!CURRENT_USER_ID) { showToast('لطفاً وارد شوید', 'error'); return; }
+        const c = document.getElementById('replyContent-' + cid).value.trim();
+        if (!c) { showToast('متن پاسخ خالی است', 'error'); return; }
+        const b = document.querySelector('#replyForm-' + cid + ' .btn-sm-primary');
+        if (b) { b.disabled = true; b.textContent = 'در حال ارسال...'; }
+        try {
+          const r = await tokenManager.fetchWithAuth('/comments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: c, postId: POST_ID, parentCommentId: cid })
+          });
+          const d = await r.json();
+          if (d.success) {
+            showToast('پاسخ ارسال شد!', 'success');
+            window.hideReplyForm(cid);
+            appendReply(cid, d.comment);
+            updateCommentsCount(1);
+            updateReplyCount(cid, 1);
+          } else {
+            showToast(d.message || 'خطا', 'error');
+            if (b) { b.disabled = false; b.textContent = 'پاسخ'; }
+          }
+        } catch (e) { showToast('خطا', 'error'); if (b) { b.disabled = false; b.textContent = 'پاسخ'; } }
+      };
+
+      window.submitComment = async function() {
+        if (!CURRENT_USER_ID) { showToast('لطفاً وارد شوید', 'error'); return; }
+        const c = document.getElementById('commentContent').value.trim();
+        if (!c) { showToast('متن نظر خالی است', 'error'); return; }
+        const b = document.getElementById('submitCommentBtn');
+        b.disabled = true;
+        b.textContent = 'در حال ارسال...';
+        try {
+          const r = await tokenManager.fetchWithAuth('/comments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: c, postId: POST_ID })
+          });
+          const d = await r.json();
+          if (d.success) {
+            showToast('نظر ارسال شد!', 'success');
+            document.getElementById('commentContent').value = '';
+            document.getElementById('charCount').textContent = '0';
+            appendTopLevelComment(d.comment);
+            updateCommentsCount(1);
+          } else {
+            showToast(d.message || 'خطا', 'error');
+            b.disabled = false;
+            b.textContent = 'ارسال نظر';
+          }
+        } catch (e) { showToast('خطا', 'error'); b.disabled = false; b.textContent = 'ارسال نظر'; }
+      };
+
+      function appendTopLevelComment(c) {
+        const e = document.getElementById('emptyComments');
+        if (e) e.remove();
+        const l = document.getElementById('commentsList');
+        const el = createCommentElement(c, 0);
+        l.insertBefore(el, l.firstChild);
+        setTimeout(function() { el.classList.add('new-comment'); }, 100);
+      }
+
+      function appendReply(pid, r) {
+        const p = document.querySelector('[data-comment-id="' + pid + '"]');
+        if (!p) return;
+        const repliesDiv = document.getElementById('replies-' + pid);
+        if (repliesDiv) {
+          const el = createCommentElement(r, 1);
+          repliesDiv.appendChild(el);
+          repliesDiv.style.display = 'block';
+        } else {
+          const rc = document.createElement('div');
+          rc.className = 'replies-container mt-2 mr-11 pr-4 border-r-2 border-gray-200';
+          rc.id = 'replies-' + pid;
+          p.appendChild(rc);
+          const el = createCommentElement(r, 1);
+          rc.appendChild(el);
+        }
+      }
+
+      function updateReplyCount(commentId, delta) {
+        const span = document.getElementById('replyCount-' + commentId);
+        if (span) span.textContent = parseInt(span.textContent) + delta;
+        const btn = document.getElementById('loadRepliesBtn-' + commentId);
+        if (!btn) {
+          const actionsDiv = document.querySelector('[data-comment-id="' + commentId + '"] .flex.items-center.gap-3');
+          if (actionsDiv) {
+            const newBtn = document.createElement('button');
+            newBtn.className = 'flex items-center gap-1 text-xs font-medium text-muted bg-none border-none cursor-pointer px-2 py-1 rounded-md hover:bg-gray-200 transition-all font-sans';
+            newBtn.id = 'loadRepliesBtn-' + commentId;
+            newBtn.onclick = function() { window.loadReplies(commentId); };
+            newBtn.innerHTML = '<i class="bi bi-chevron-down text-sm"></i> <span id="replyCount-' + commentId + '">' + (parseInt(span?.textContent) || 1) + '</span> پاسخ';
+            actionsDiv.appendChild(newBtn);
+          }
+        }
+      }
+
+      function createCommentElement(c, d) {
+        const div = document.createElement('div');
+        div.className = 'bg-gray-50 rounded-xl px-4 py-3.5 mb-2 transition-all hover:bg-gray-100';
+        div.setAttribute('data-comment-id', c._id);
+        div.style.animation = 'slideDown 0.3s ease';
+
+        const an = c.author?.username || 'unknown';
+        const ai = an.charAt(0).toUpperCase();
+        const t = timeAgo(c.createdAt);
+        const lc = c.likesCount || c.likes?.length || 0;
+        const aid = (c.author?._id || c.author).toString();
+        const il = c.likes && CURRENT_USER_ID && (Array.isArray(c.likes) ? c.likes.some(function(l) { return (l._id || l).toString() === CURRENT_USER_ID; }) : false);
+        const avatarColor = ['#f09433', '#e6683c', '#dc2743', '#cc2366', '#bc1888', '#0095f6', '#34a853', '#ea4335', '#8b5cf6', '#ec4899'][Math.abs(an.charCodeAt(0) || 0) % 10];
+
+        div.innerHTML = `
+          <div class="flex items-center gap-2.5 mb-1">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white flex-shrink-0 select-none" style="background:${avatarColor};">${ai}</div>
+            <a href="/@${an}" class="font-semibold text-sm text-dark no-underline hover:text-primary transition-colors">@${an}</a>
+            <span class="text-xs text-gray-400 mr-auto">${t}</span>
+            ${(CURRENT_USER_ID === aid || IS_ADMIN) ? '<button class="bg-none border-none text-gray-400 hover:text-danger cursor-pointer p-1 rounded-md hover:bg-red-50 transition-all" onclick="openDeleteConfirm(\'comment\', \'' + c._id + '\')" title="حذف"><i class="bi bi-trash text-sm"></i></button>' : ''}
+          </div>
+          <div class="text-sm leading-relaxed text-dark whitespace-pre-wrap break-words mb-2 pr-11">${escapeHtml(c.content || '')}</div>
+          <div class="flex items-center gap-3 pr-11">
+            <button class="comment-like-btn ${il ? 'liked' : ''}" onclick="toggleCommentLike('${c._id}')">
+              <i class="bi ${il ? 'bi-heart-fill' : 'bi-heart'}"></i>
+              <span id="commentLikes-${c._id}">${formatCount(lc)}</span>
+            </button>
+            <button class="flex items-center gap-1 text-xs font-medium text-muted bg-none border-none cursor-pointer px-2 py-1 rounded-md hover:bg-gray-200 transition-all font-sans" onclick="showReplyForm('${c._id}')">
+              <i class="bi bi-reply text-sm"></i> پاسخ
+            </button>
+          </div>
+          <div id="replyForm-${c._id}" class="reply-form">
+            <textarea id="replyContent-${c._id}" placeholder="پاسخ خود را بنویسید..." maxlength="280" rows="2" class="w-full px-3.5 py-2.5 border border-border rounded-lg resize-y min-h-[44px] font-sans text-sm transition-all bg-gray-50 outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10"></textarea>
+            <div class="flex gap-2 mt-2">
+              <button class="px-4 py-1.5 rounded-lg font-sans text-xs font-semibold cursor-pointer border-none bg-primary text-white hover:bg-blue-600 transition-all" onclick="submitReply('${c._id}')">پاسخ</button>
+              <button class="px-4 py-1.5 rounded-lg font-sans text-xs font-semibold cursor-pointer border-none bg-gray-200 text-gray-600 hover:bg-gray-300 transition-all" onclick="hideReplyForm('${c._id}')">انصراف</button>
+            </div>
+          </div>
+          <div id="replies-${c._id}" class="replies-container mt-2 mr-11 pr-4 border-r-2 border-gray-200" style="display:none;"></div>
+        `;
+
+        return div;
+      }
+
+      function updateCommentsCount(delta) {
+        ['totalComments', 'commentsCount'].forEach(function(id) {
+          const e = document.getElementById(id);
+          if (e) e.textContent = parseInt(e.textContent) + delta;
+        });
+      }
+
+      window.updateCharCount = function() {
+        document.getElementById('charCount').textContent = document.getElementById('commentContent').value.length;
+      };
+
+      function setupSocketListeners() {
+        var cc = 0;
+        var ci = setInterval(function() {
+          cc++;
+          if (typeof socket !== 'undefined' && socket && socket.connected) {
+            clearInterval(ci);
+            socket.emit('post:join', { postId: POST_ID });
+            socket.on('post:liked', function(d) {
+              if (d.postId === POST_ID) updatePostLikeUI(d.liked, d.likesCount);
+            });
+            socket.on('comment:new', function(d) {
+              if (d.postId !== POST_ID) return;
+              var c = d.comment;
+              var aid = (c.author?._id || c.author).toString();
+              if (aid === CURRENT_USER_ID || document.querySelector('[data-comment-id="' + c._id + '"]')) return;
+              if (!c.parentComment) { appendTopLevelComment(c); updateCommentsCount(1); }
+            });
+            socket.on('comment:liked', function(d) {
+              updateCommentLikeUI(d.commentId, d.liked, d.likesCount);
+            });
+            socket.on('comment:deleted', function(d) {
+              if (d.postId !== POST_ID) return;
+              var e = document.querySelector('[data-comment-id="' + d.commentId + '"]');
+              if (e) {
+                e.style.opacity = '0';
+                e.style.transform = 'scale(0.9)';
+                e.style.transition = 'all 0.3s';
+                setTimeout(function() { e.remove(); updateCommentsCount(-1); }, 300);
+              }
+            });
+          }
+          if (cc > 50) { clearInterval(ci); }
+        }, 200);
+      }
+
+      document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          if (e.target.id === 'commentContent') window.submitComment();
+          else if (e.target.id?.startsWith('replyContent-')) window.submitReply(e.target.id.replace('replyContent-', ''));
+        }
+      });
+
+      setupSocketListeners();
+    })();
+  </script>
+</body>
+</html>

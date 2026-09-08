@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ورود · واتی‌واتی</title>
+    <link
+      href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Vazirmatn", "Sahel", "sans-serif"],
+            },
+            colors: {
+              primary: "#0095f6",
+              danger: "#ed4956",
+              success: "#22c55e",
+              dark: "#1a1a1a",
+              muted: "#8e8e8e",
+              light: "#fafafa",
+              border: "#e8e8e8",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Vazirmatn", "Sahel", sans-serif;
+        background: #fafafa;
+        color: #1a1a1a;
+        direction: rtl;
+        -webkit-font-smoothing: antialiased;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        position: relative;
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        top: -40%;
+        right: -30%;
+        width: 80%;
+        height: 80%;
+        background: radial-gradient(
+          circle,
+          rgba(79, 70, 229, 0.05) 0%,
+          transparent 60%
+        );
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        bottom: -30%;
+        left: -20%;
+        width: 70%;
+        height: 70%;
+        background: radial-gradient(
+          circle,
+          rgba(0, 149, 246, 0.05) 0%,
+          transparent 60%
+        );
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .auth-card {
+        background: #ffffff;
+        border-radius: 24px;
+        padding: 48px 40px;
+        width: 100%;
+        max-width: 440px;
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.06);
+        border: 1px solid #e8e8e8;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        z-index: 1;
+        animation: cardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      @keyframes cardIn {
+        from {
+          opacity: 0;
+          transform: translateY(24px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .auth-card:hover {
+        box-shadow: 0 12px 56px rgba(0, 0, 0, 0.08);
+        border-color: #d0d0d0;
+      }
+
+      .logo-box {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+        color: white;
+        font-weight: 800;
+        font-size: 1.6rem;
+        border-radius: 18px;
+        transform: rotate(3deg);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        letter-spacing: -0.5px;
+        margin: 0 auto 14px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .logo-box::after {
+        content: "";
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.1) 0%,
+          transparent 50%
+        );
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+
+      .logo-box:hover {
+        transform: rotate(0deg) scale(1.06);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+      }
+
+      .logo-box:hover::after {
+        opacity: 1;
+      }
+
+      .logo-text {
+        font-weight: 800;
+        font-size: 1.8rem;
+        letter-spacing: -0.3px;
+        background: linear-gradient(135deg, #0a0a0a 30%, #4f46e5 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-align: center;
+      }
+
+      .form-input {
+        width: 100%;
+        padding: 13px 16px;
+        border: 2px solid #e8e8e8;
+        border-radius: 12px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        transition: all 0.25s;
+        background: #fafafa;
+        color: #1a1a1a;
+      }
+
+      .form-input:focus {
+        outline: none;
+        border-color: #4f46e5;
+        background: white;
+        box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.08);
+      }
+
+      .form-input::placeholder {
+        color: #b0b0b0;
+      }
+
+      .form-label {
+        display: block;
+        font-weight: 600;
+        color: #4a4a4a;
+        font-size: 0.88rem;
+        margin-bottom: 8px;
+      }
+
+      .form-group {
+        margin-bottom: 22px;
+        position: relative;
+      }
+
+      .password-toggle {
+        position: absolute;
+        left: 12px;
+        top: 42px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #8e8e8e;
+        font-size: 1.2rem;
+        padding: 4px;
+        border-radius: 8px;
+        transition: all 0.2s;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+      }
+
+      .password-toggle:hover {
+        color: #1a1a1a;
+        background: #f0f0f0;
+      }
+
+      .btn-submit {
+        width: 100%;
+        padding: 14px;
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-family: inherit;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+      }
+
+      .btn-submit::after {
+        content: "";
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.08) 0%,
+          transparent 50%
+        );
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+
+      .btn-submit:hover {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
+      }
+
+      .btn-submit:hover::after {
+        opacity: 1;
+      }
+
+      .btn-submit:active {
+        transform: translateY(0);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+      }
+
+      .btn-submit:disabled {
+        background: #c0c0c0;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .error-message {
+        background: #fee8ea;
+        color: #ed4956;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 1px solid #fcc;
+        font-weight: 500;
+        font-size: 0.9rem;
+        display: none;
+        margin-bottom: 18px;
+        animation: shake 0.4s ease;
+      }
+
+      @keyframes shake {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        25% {
+          transform: translateX(-6px);
+        }
+        75% {
+          transform: translateX(6px);
+        }
+      }
+
+      .auth-link {
+        text-align: center;
+        margin-top: 22px;
+        color: #8e8e8e;
+        font-size: 0.95rem;
+      }
+
+      .auth-link a {
+        color: #0095f6;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.2s;
+      }
+
+      .auth-link a:hover {
+        color: #1877f2;
+        text-decoration: underline;
+      }
+
+      .divider {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin: 26px 0;
+      }
+
+      .divider::before,
+      .divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: #e8e8e8;
+      }
+
+      .divider span {
+        color: #b0b0b0;
+        font-size: 0.85rem;
+      }
+
+      @media (max-width: 480px) {
+        .auth-card {
+          padding: 32px 24px;
+          border-radius: 20px;
+        }
+        .logo-text {
+          font-size: 1.4rem;
+        }
+        .logo-box {
+          width: 48px;
+          height: 48px;
+          font-size: 1.2rem;
+          border-radius: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body class="font-sans bg-light text-dark antialiased">
+    <div class="auth-card">
+      <div class="flex flex-col items-center">
+        <span class="logo-box">و</span>
+        <span class="logo-text">واتی‌واتی</span>
+      </div>
+
+      <div class="mt-6 text-center text-gray-500 text-sm">
+        به واتی‌واتی خوش آمدید
+      </div>
+
+      <div id="errorMessage" class="error-message"></div>
+
+      <form id="loginForm" class="mt-6">
+        <div class="form-group">
+          <label class="form-label" for="email">
+            <i class="bi bi-envelope ml-1"></i> ایمیل
+          </label>
+          <input
+            type="email"
+            id="email"
+            class="form-input"
+            placeholder="example@email.com"
+            required
+            autocomplete="email"
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">
+            <i class="bi bi-lock ml-1"></i> رمز عبور
+          </label>
+          <input
+            type="password"
+            id="password"
+            class="form-input"
+            placeholder="••••••••"
+            required
+            autocomplete="current-password"
+            style="padding-left: 48px"
+          />
+          <button
+            type="button"
+            class="password-toggle"
+            id="togglePassword"
+            title="نمایش رمز عبور"
+          >
+            <i class="bi bi-eye" id="toggleIcon"></i>
+          </button>
+        </div>
+
+        <button type="submit" class="btn-submit" id="submitBtn">
+          <i class="bi bi-box-arrow-in-right ml-1"></i> ورود
+        </button>
+      </form>
+
+      <div class="divider">
+        <span>یا</span>
+      </div>
+
+      <div class="auth-link">
+        حساب کاربری ندارید؟
+        <a href="/auth/register">ثبت‌نام کنید</a>
+      </div>
+    </div>
+
+    <%- include('../partials/scripts.ejs') %>
+    <script>
+      var togglePassword = document.getElementById("togglePassword");
+      var passwordInput = document.getElementById("password");
+      var toggleIcon = document.getElementById("toggleIcon");
+
+      togglePassword.addEventListener("click", function () {
+        if (passwordInput.type === "password") {
+          passwordInput.type = "text";
+          toggleIcon.className = "bi bi-eye-slash";
+          togglePassword.title = "مخفی کردن رمز عبور";
+        } else {
+          passwordInput.type = "password";
+          toggleIcon.className = "bi bi-eye";
+          togglePassword.title = "نمایش رمز عبور";
+        }
+        passwordInput.focus();
+      });
+
+      document
+        .getElementById("loginForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+
+          var email = document.getElementById("email").value;
+          var password = document.getElementById("password").value;
+          var errorDiv = document.getElementById("errorMessage");
+          var submitBtn = document.getElementById("submitBtn");
+
+          errorDiv.style.display = "none";
+          errorDiv.textContent = "";
+
+          if (!email || !password) {
+            errorDiv.textContent = "لطفاً تمام فیلدها را پر کنید";
+            errorDiv.style.display = "block";
+            return;
+          }
+
+          submitBtn.disabled = true;
+          submitBtn.innerHTML =
+            '<i class="bi bi-hourglass-split ml-1"></i> در حال ورود...';
+
+          try {
+            var response = await fetch("/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: email, password: password }),
+              credentials: "include",
+            });
+
+            var data = await response.json();
+
+            if (data.success) {
+              window.location.href = "/";
+            } else {
+              errorDiv.textContent =
+                data.message || "ورود ناموفق بود. لطفاً مجدداً تلاش کنید.";
+              errorDiv.style.display = "block";
+              submitBtn.disabled = false;
+              submitBtn.innerHTML =
+                '<i class="bi bi-box-arrow-in-right ml-1"></i> ورود';
+            }
+          } catch (error) {
+            console.error("Login error:", error);
+            errorDiv.textContent =
+              "خطا در ارتباط با سرور. لطفاً مجدداً تلاش کنید.";
+            errorDiv.style.display = "block";
+            submitBtn.disabled = false;
+            submitBtn.innerHTML =
+              '<i class="bi bi-box-arrow-in-right ml-1"></i> ورود';
+          }
+        });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          var active = document.activeElement;
+          if (active && (active.id === "email" || active.id === "password")) {
+            document
+              .getElementById("loginForm")
+              .dispatchEvent(new Event("submit"));
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

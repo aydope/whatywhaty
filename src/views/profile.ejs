@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>@<%= profileUser.username %> · واتی‌واتی</title>
+  <link href="https://cdn.jsdelivr.net/gh/rastikerdar/sahel-font@v3.4.0/dist/fonts/Sahel.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Sahel', 'Vazirmatn', 'sans-serif'],
+          },
+          colors: {
+            primary: '#0095f6',
+            danger: '#ed4956',
+            success: '#22c55e',
+            dark: '#1a1a1a',
+            muted: '#8e8e8e',
+            light: '#fafafa',
+            border: '#e8e8e8',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Sahel", "Vazirmatn", sans-serif;
+      background: #fafafa;
+      color: #1a1a1a;
+      direction: rtl;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    .loading-spinner {
+      border: 3px solid #e8e8e8;
+      border-top-color: #0095f6;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .edit-tab {
+      transition: all 0.2s;
+    }
+
+    .edit-tab.active-tab {
+      background: #0095f6 !important;
+      color: white !important;
+    }
+
+    #sidebar {
+      transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #sidebar.open {
+      right: 0;
+    }
+
+    #sidebarOverlay {
+      transition: all 0.3s ease;
+    }
+
+    #sidebarOverlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    #dropdownMenu {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #dropdownMenu.open {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    #confirmOverlay,
+    #editModalOverlay,
+    #followModalOverlay {
+      display: none;
+    }
+
+    #confirmOverlay.active,
+    #editModalOverlay.active,
+    #followModalOverlay.active {
+      display: flex;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-weight: 500;
+      z-index: 99999;
+      animation: slideUp 0.3s ease;
+      font-family: "Sahel", "Vazirmatn", sans-serif;
+      font-size: 0.9rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .toast-error {
+      background: #fee8ea;
+      color: #ed4956;
+      border: 1px solid #fcc;
+    }
+
+    .toast-success {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #c8e6c9;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    .animate-scale-in {
+      animation: scaleIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+  </style>
+</head>
+<body class="font-sans bg-light text-dark antialiased overflow-x-hidden">
+
+  <header class="bg-white/80 backdrop-blur-lg border-b border-border sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5 no-underline group">
+        <span class="inline-flex items-center justify-center w-10 h-10 bg-dark text-white font-extrabold text-lg rounded-xl rotate-3 shadow-md transition-all group-hover:rotate-0 group-hover:scale-110 tracking-tight flex-shrink-0">و</span>
+        <span class="font-bold text-lg tracking-tight bg-gradient-to-l from-dark to-indigo-600 bg-clip-text text-transparent">واتی‌واتی</span>
+      </a>
+
+      <div class="flex items-center gap-1">
+        <a href="/" class="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-dark hover:bg-gray-50 transition-all">
+          <i class="bi bi-house-door text-lg"></i>
+          <span>خانه</span>
+        </a>
+        <a href="/explore" class="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-dark hover:bg-gray-50 transition-all">
+          <i class="bi bi-compass text-lg"></i>
+          <span>اکتشاف</span>
+        </a>
+        <a href="/messages" class="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-dark hover:bg-gray-50 transition-all">
+          <i class="bi bi-chat-dots text-lg"></i>
+          <span>پیام‌ها</span>
+        </a>
+
+        <% if (currentUser) { %>
+        <div class="relative" id="profileDropdown">
+          <button class="w-9 h-9 rounded-full cursor-pointer border-2 border-transparent hover:border-primary transition-all flex items-center justify-center font-bold text-sm text-white bg-gradient-to-br from-primary to-indigo-600 flex-shrink-0 select-none" onclick="toggleDropdown()">
+            <%= currentUser.username.charAt(0).toUpperCase() %>
+          </button>
+
+          <div class="absolute top-full left-0 mt-2 bg-white rounded-2xl border border-border shadow-xl min-w-[220px] py-2 opacity-0 invisible -translate-y-2 scale-95 z-50" id="dropdownMenu">
+            <div class="px-4 py-3 flex items-center gap-3 border-b border-gray-100">
+              <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-base text-white bg-gradient-to-br from-primary to-indigo-600 flex-shrink-0 select-none">
+                <%= currentUser.username.charAt(0).toUpperCase() %>
+              </div>
+              <div>
+                <div class="font-semibold text-sm text-dark"><%= currentUser.username %></div>
+                <div class="text-xs text-muted">@<%= currentUser.username %></div>
+              </div>
+            </div>
+
+            <a href="/@<%= currentUser.username %>" class="flex items-center gap-3 px-4 py-2.5 text-dark no-underline text-sm font-medium hover:bg-gray-50 transition-all cursor-pointer">
+              <i class="bi bi-person text-lg text-gray-500"></i>
+              پروفایل من
+            </a>
+
+            <a href="/settings" class="flex items-center gap-3 px-4 py-2.5 text-dark no-underline text-sm font-medium hover:bg-gray-50 transition-all cursor-pointer">
+              <i class="bi bi-gear text-lg text-gray-500"></i>
+              تنظیمات
+            </a>
+
+            <div class="h-px bg-gray-100 my-1"></div>
+
+            <button onclick="handleLogout()" class="flex items-center gap-3 px-4 py-2.5 text-danger no-underline text-sm font-medium hover:bg-red-50 transition-all cursor-pointer border-none bg-none w-full text-right font-sans">
+              <i class="bi bi-box-arrow-right text-lg"></i>
+              خروج از حساب
+            </button>
+          </div>
+        </div>
+        <% } %>
+
+        <button class="md:hidden bg-none border-none text-2xl text-dark cursor-pointer p-1.5 rounded-lg hover:bg-gray-100 transition-all" onclick="openSidebar()">
+          <i class="bi bi-list"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="fixed inset-0 bg-black/40 z-[999] opacity-0 invisible" id="sidebarOverlay" onclick="closeSidebar()"></div>
+  <div class="fixed top-0 -right-[320px] w-[300px] h-full bg-white z-[1000] p-5 overflow-y-auto shadow-2xl" id="sidebar">
+    <div class="flex items-center justify-between pb-4 border-b border-gray-100 mb-4">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 bg-dark text-white font-extrabold text-sm rounded-xl rotate-3 flex items-center justify-center flex-shrink-0">و</div>
+        <span class="font-bold text-base bg-gradient-to-l from-dark to-indigo-600 bg-clip-text text-transparent">واتی‌واتی</span>
+      </div>
+      <button class="bg-none border-none text-xl text-gray-600 cursor-pointer p-1 rounded-lg hover:bg-gray-100" onclick="closeSidebar()">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+
+    <div class="flex items-center gap-3 px-3.5 py-3 mb-3 rounded-xl bg-gray-50">
+      <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-indigo-600 text-white flex items-center justify-center font-bold text-base flex-shrink-0"><%= currentUser ? currentUser.username.charAt(0).toUpperCase() : '?' %></div>
+      <div>
+        <div class="font-semibold text-sm text-dark"><%= currentUser ? currentUser.username : 'کاربر' %></div>
+        <div class="text-xs text-muted"><%= currentUser ? '@' + currentUser.username : 'مهمان' %></div>
+      </div>
+    </div>
+
+    <a href="/" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-gray-600 no-underline text-sm font-medium hover:bg-gray-50 transition-all mb-1">
+      <i class="bi bi-house-door text-lg w-6"></i> خانه
+    </a>
+    <a href="/explore" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-gray-600 no-underline text-sm font-medium hover:bg-gray-50 transition-all mb-1">
+      <i class="bi bi-compass text-lg w-6"></i> اکتشاف
+    </a>
+    <a href="/messages" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-gray-600 no-underline text-sm font-medium hover:bg-gray-50 transition-all mb-1">
+      <i class="bi bi-chat-dots text-lg w-6"></i> پیام‌ها
+    </a>
+
+    <div class="h-px bg-gray-100 my-2"></div>
+
+    <a href="/@<%= currentUser ? currentUser.username : '' %>" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-dark no-underline text-sm font-medium bg-gray-50 transition-all mb-1">
+      <i class="bi bi-person text-lg w-6"></i> پروفایل
+    </a>
+
+    <a href="/settings" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-gray-600 no-underline text-sm font-medium hover:bg-gray-50 transition-all mb-1">
+      <i class="bi bi-gear text-lg w-6"></i> تنظیمات
+    </a>
+
+    <div class="h-px bg-gray-100 my-2"></div>
+
+    <button onclick="handleLogout()" class="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-danger no-underline text-sm font-medium hover:bg-red-50 transition-all cursor-pointer border-none bg-none w-full text-right font-sans">
+      <i class="bi bi-box-arrow-right text-lg w-6"></i> خروج از حساب
+    </button>
+  </div>
+
+  <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] items-center justify-center" id="confirmOverlay">
+    <div class="bg-white rounded-2xl px-8 py-8 max-w-[380px] w-[90%] text-center shadow-2xl animate-scale-in">
+      <div class="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+        <i class="bi bi-box-arrow-right text-3xl text-danger"></i>
+      </div>
+      <h3 class="text-lg font-bold text-dark mb-2">خروج از حساب</h3>
+      <p class="text-sm text-muted mb-6 leading-relaxed">آیا مطمئن هستید که می‌خواهید از حساب خود خارج شوید؟</p>
+      <div class="flex gap-2.5 justify-center">
+        <button class="px-7 py-2.5 rounded-xl font-sans text-sm font-semibold cursor-pointer border border-border bg-white text-dark hover:bg-gray-50 transition-all" onclick="closeConfirm()">انصراف</button>
+        <button class="px-7 py-2.5 rounded-xl font-sans text-sm font-semibold cursor-pointer border-none bg-danger text-white hover:bg-red-600 transition-all" id="confirmLogoutBtn">خروج</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] items-center justify-center" id="editModalOverlay">
+    <div class="bg-white rounded-2xl max-w-[480px] w-[92%] max-h-[90vh] overflow-y-auto shadow-2xl animate-scale-in">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
+        <h3 class="text-lg font-bold text-dark">ویرایش پروفایل</h3>
+        <button class="bg-none border-none text-2xl text-gray-600 cursor-pointer p-1 rounded-lg hover:bg-gray-100 transition-all" onclick="closeEditModal()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="p-6">
+        <div class="flex gap-2 mb-6 bg-gray-50 rounded-xl p-1.5">
+          <button class="edit-tab flex-1 px-4 py-2.5 rounded-lg font-sans text-sm font-medium cursor-pointer border-none transition-all active-tab" data-tab="info" onclick="switchEditTab('info')" style="background: #0095f6; color: white;">
+            <i class="bi bi-person"></i> اطلاعات
+          </button>
+          <button class="edit-tab flex-1 px-4 py-2.5 rounded-lg font-sans text-sm font-medium cursor-pointer border-none transition-all" data-tab="password" onclick="switchEditTab('password')" style="background: transparent; color: #8e8e8e;">
+            <i class="bi bi-lock"></i> رمز عبور
+          </button>
+        </div>
+
+        <div class="tab-content active" id="tab-info" style="display: block;">
+          <div class="hidden px-3.5 py-2.5 rounded-lg text-sm mb-3" id="infoMessage"></div>
+
+          <form id="editProfileForm">
+            <div class="mb-4">
+              <label class="block text-muted font-medium text-xs mb-1.5" for="editUsername">نام کاربری</label>
+              <input type="text" id="editUsername" class="w-full bg-gray-50 border border-border rounded-xl px-4 py-3 text-dark font-sans text-sm transition-all focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10" value="<%= profileUser.username %>" required minlength="3" maxlength="30" />
+              <span class="block text-gray-400 text-xs mt-1.5">بین ۳ تا ۳۰ کاراکتر</span>
+            </div>
+            <div class="mb-5">
+              <label class="block text-muted font-medium text-xs mb-1.5" for="editEmail">ایمیل</label>
+              <input type="email" id="editEmail" class="w-full bg-gray-50 border border-border rounded-xl px-4 py-3 text-dark font-sans text-sm transition-all focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10" value="<%= profileUser.email || '' %>" required />
+            </div>
+            <button type="submit" class="w-full bg-primary text-white border-none px-7 py-3 rounded-xl font-semibold text-sm hover:bg-blue-600 transition-all font-sans cursor-pointer shadow-lg shadow-primary/20">ذخیره تغییرات</button>
+          </form>
+        </div>
+
+        <div class="tab-content" id="tab-password" style="display: none;">
+          <div class="hidden px-3.5 py-2.5 rounded-lg text-sm mb-3" id="passwordMessage"></div>
+
+          <form id="editPasswordForm">
+            <div class="mb-4">
+              <label class="block text-muted font-medium text-xs mb-1.5" for="currentPassword">رمز عبور فعلی</label>
+              <input type="password" id="currentPassword" class="w-full bg-gray-50 border border-border rounded-xl px-4 py-3 text-dark font-sans text-sm transition-all focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10" placeholder="رمز عبور فعلی را وارد کنید" required autocomplete="current-password" />
+            </div>
+            <div class="mb-4">
+              <label class="block text-muted font-medium text-xs mb-1.5" for="newPassword">رمز عبور جدید</label>
+              <input type="password" id="newPassword" class="w-full bg-gray-50 border border-border rounded-xl px-4 py-3 text-dark font-sans text-sm transition-all focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10" placeholder="رمز عبور جدید" required minlength="6" autocomplete="new-password" />
+              <span class="block text-gray-400 text-xs mt-1.5">حداقل ۶ کاراکتر</span>
+            </div>
+            <div class="mb-5">
+              <label class="block text-muted font-medium text-xs mb-1.5" for="confirmPassword">تکرار رمز عبور جدید</label>
+              <input type="password" id="confirmPassword" class="w-full bg-gray-50 border border-border rounded-xl px-4 py-3 text-dark font-sans text-sm transition-all focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10" placeholder="رمز عبور جدید را تکرار کنید" required autocomplete="new-password" />
+            </div>
+            <button type="submit" class="w-full bg-primary text-white border-none px-7 py-3 rounded-xl font-semibold text-sm hover:bg-blue-600 transition-all font-sans cursor-pointer shadow-lg shadow-primary/20">تغییر رمز عبور</button>
+          </form>
+
+          <div class="mt-5 pt-5 border-t border-gray-100 text-center">
+            <button class="bg-none border-none text-primary font-sans text-xs cursor-pointer px-2 py-1 hover:text-blue-700 hover:underline transition-all" id="forgotPasswordBtn" onclick="handleForgotPassword()">
+              <i class="bi bi-key"></i> رمز عبور خود را فراموش کرده‌اید؟
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] items-center justify-center" id="followModalOverlay">
+    <div class="bg-white rounded-2xl max-w-[400px] w-[92%] max-h-[80vh] flex flex-col shadow-2xl animate-scale-in">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <h3 class="text-base font-bold text-dark" id="followModalTitle">دنبال‌کننده‌ها</h3>
+        <button class="bg-none border-none text-2xl text-gray-600 cursor-pointer p-1 rounded-lg hover:bg-gray-100" onclick="closeFollowModal()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto py-2" id="followModalBody"></div>
+      <div class="p-3 flex justify-center border-t border-gray-100" id="followModalFooter" style="display: none;">
+        <div class="loading-spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <main class="max-w-4xl mx-auto px-4 py-6">
+
+    <div class="bg-white rounded-2xl border border-border p-6 md:p-8 mb-6 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center gap-6 md:gap-10">
+
+        <div class="flex justify-center md:justify-start">
+          <div class="w-24 h-24 md:w-32 md:h-32 rounded-full flex items-center justify-center font-bold text-3xl md:text-4xl text-white flex-shrink-0 select-none bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 border-4 border-white shadow-xl transition-transform hover:scale-105">
+            <%= profileUser.username.charAt(0).toUpperCase() %>
+          </div>
+        </div>
+
+        <div class="flex-1 text-center md:text-right">
+          <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-5 mb-4">
+            <span class="text-xl md:text-2xl font-bold text-dark"><%= profileUser.username %></span>
+
+            <% if (currentUser && currentUser._id.toString() === profileUser._id.toString()) { %>
+              <button onclick="openEditModal()" class="bg-gray-50 text-dark border border-border px-6 py-2 rounded-xl font-semibold text-sm hover:bg-gray-100 transition-all font-sans cursor-pointer">
+                <i class="bi bi-pencil-square"></i> ویرایش پروفایل
+              </button>
+            <% } else if (currentUser) { %>
+              <div class="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                <button id="followBtn" class="<%= currentUser.following && currentUser.following.includes(profileUser._id) ? 'bg-gray-100 text-dark border border-border' : 'bg-primary text-white shadow-lg shadow-primary/20' %> text-sm px-7 py-2 rounded-xl font-semibold hover:opacity-90 transition-all font-sans cursor-pointer" onclick="toggleFollow()">
+                  <%= currentUser.following && currentUser.following.includes(profileUser._id) ? 'دنبال می‌کنید' : 'دنبال کنید' %>
+                </button>
+                <a href="/messages?user=<%= profileUser._id %>" class="bg-gray-50 text-dark border border-border px-5 py-2 rounded-xl font-semibold text-sm hover:bg-gray-100 transition-all font-sans cursor-pointer no-underline inline-flex items-center gap-1.5">
+                  <i class="bi bi-send"></i> پیام
+                </a>
+                <button id="blockBtn" class="bg-transparent text-muted border-none px-4 py-2 font-normal text-xs hover:text-danger transition-all font-sans cursor-pointer <%= currentUser.blockedUsers && currentUser.blockedUsers.includes(profileUser._id) ? 'text-danger' : '' %>" onclick="toggleBlock()">
+                  <i class="bi <%= currentUser.blockedUsers && currentUser.blockedUsers.includes(profileUser._id) ? 'bi-check-circle' : 'bi-slash-circle' %>"></i>
+                  <%= currentUser.blockedUsers && currentUser.blockedUsers.includes(profileUser._id) ? 'رفع بلاک' : 'بلاک' %>
+                </button>
+              </div>
+            <% } %>
+          </div>
+
+          <% if (profileUser.email) { %>
+            <div class="text-muted text-sm mb-1"><i class="bi bi-envelope"></i> <%= profileUser.email %></div>
+          <% } %>
+          <% if (profileUser.role === 'admin') { %>
+            <div class="inline-block bg-gradient-to-l from-indigo-500 to-purple-600 text-white px-4 py-1 rounded-full text-xs font-semibold mt-1 shadow-md">
+              <i class="bi bi-shield-check"></i> مدیر
+            </div>
+          <% } %>
+
+          <div class="flex justify-center md:justify-start gap-8 md:gap-12 mt-5">
+            <div class="text-center cursor-pointer group" onclick="openFollowModal('followers')">
+              <div class="text-2xl font-bold text-dark group-hover:text-primary transition-colors" id="followersCount"><%= profileUser.followers ? profileUser.followers.length : 0 %></div>
+              <div class="text-muted text-xs font-normal mt-0.5">دنبال‌کننده</div>
+            </div>
+            <div class="text-center cursor-pointer group" onclick="openFollowModal('following')">
+              <div class="text-2xl font-bold text-dark group-hover:text-primary transition-colors" id="followingCount"><%= profileUser.following ? profileUser.following.length : 0 %></div>
+              <div class="text-muted text-xs font-normal mt-0.5">دنبال‌شونده</div>
+            </div>
+            <div class="text-center">
+              <div class="text-2xl font-bold text-dark" id="postsCount">0</div>
+              <div class="text-muted text-xs font-normal mt-0.5">پست</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-border p-6 shadow-sm">
+      <div class="flex items-center justify-between mb-5 pb-4 border-b border-gray-100">
+        <h3 class="text-base font-bold text-dark flex items-center gap-2">
+          <i class="bi bi-grid text-primary"></i>
+          پست‌ها
+          <span class="text-muted text-sm font-normal" id="postsCountLabel">(0)</span>
+        </h3>
+      </div>
+
+      <div id="postsContainer">
+        <div class="flex flex-col items-center justify-center py-12">
+          <div class="loading-spinner"></div>
+          <p class="text-gray-400 text-sm mt-4">در حال بارگذاری...</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <%- include('partials/scripts') %>
+  <script>
+    (function() {
+      const PROFILE_USER_ID = '<%= profileUser._id %>';
+      const IS_OWN_PROFILE = '<%= currentUser && currentUser._id.toString() === profileUser._id.toString() ? "1" : "0" %>' === '1';
+
+      let isFollowing = <%= currentUser && currentUser.following && currentUser.following.includes(profileUser._id) ? 'true' : 'false' %>;
+      let isBlocked = <%= currentUser && currentUser.blockedUsers && currentUser.blockedUsers.includes(profileUser._id) ? 'true' : 'false' %>;
+
+      let followersPage = 1;
+      let followingPage = 1;
+      let hasMoreFollowers = false;
+      let hasMoreFollowing = false;
+      let isLoadingMore = false;
+      let currentListType = 'followers';
+      let observer = null;
+
+      const avatarColors = ['#f09433', '#e6683c', '#dc2743', '#cc2366', '#bc1888', '#0095f6', '#34a853', '#8b5cf6', '#ec4899', '#ea4335'];
+
+      const getAvatarColor = (username) => {
+        const hash = Math.abs(username.charCodeAt(0) || 0) % avatarColors.length;
+        return avatarColors[hash];
+      };
+
+      const getInitial = (username) => username.charAt(0).toUpperCase();
+
+      const formatCount = (count) => {
+        if (!count && count !== 0) return '0';
+        if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
+        if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
+        return count.toString();
+      };
+
+      const timeAgo = (date) => {
+        if (!date) return '';
+        const now = new Date();
+        const past = new Date(date);
+        const diff = Math.floor((now - past) / 1000);
+
+        if (diff < 60) return 'همین الان';
+        if (diff < 3600) return Math.floor(diff / 60) + ' دقیقه پیش';
+        if (diff < 86400) return Math.floor(diff / 3600) + ' ساعت پیش';
+        if (diff < 604800) return Math.floor(diff / 86400) + ' روز پیش';
+        return past.toLocaleDateString('fa-IR-u-nu-latn');
+      };
+
+      const escapeHtml = (text) => {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      };
+
+      const showToast = (message, type = 'error') => {
+        const existing = document.querySelector('.toast');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        setTimeout(() => toast.remove(), 3000);
+      };
+
+      window.openSidebar = function() {
+        document.getElementById('sidebar').classList.add('open');
+        document.getElementById('sidebarOverlay').classList.add('active');
+        document.body.style.overflow = 'hidden';
+      };
+
+      window.closeSidebar = function() {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebarOverlay').classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.toggleDropdown = function() {
+        const menu = document.getElementById("dropdownMenu");
+        menu.classList.toggle("open");
+      };
+
+      document.addEventListener("click", function(e) {
+        const dropdown = document.getElementById("profileDropdown");
+        if (dropdown && !dropdown.contains(e.target)) {
+          document.getElementById("dropdownMenu").classList.remove("open");
+        }
+      });
+
+      window.closeConfirm = function() {
+        document.getElementById("confirmOverlay").classList.remove("active");
+      };
+
+      window.handleLogout = function() {
+        window.closeSidebar();
+        window.closeConfirm();
+        setTimeout(() => {
+          document.getElementById("confirmOverlay").classList.add("active");
+        }, 200);
+      };
+
+      document.getElementById("confirmLogoutBtn").addEventListener("click", async function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = "در حال خروج...";
+
+        try {
+          const response = await fetch("/auth/logout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            window.location.href = "/auth/login";
+          } else {
+            showToast(data.message || "خطا در خروج", "error");
+            window.closeConfirm();
+            btn.disabled = false;
+            btn.textContent = "خروج";
+          }
+        } catch (error) {
+          showToast("خطا در ارتباط با سرور", "error");
+          window.closeConfirm();
+          btn.disabled = false;
+          btn.textContent = "خروج";
+        }
+      });
+
+      document.getElementById("confirmOverlay").addEventListener("click", function(e) {
+        if (e.target === this) window.closeConfirm();
+      });
+
+      window.openEditModal = function() {
+        document.getElementById('editModalOverlay').classList.add('active');
+        document.body.style.overflow = 'hidden';
+        clearMessages();
+        const forgotBtn = document.getElementById('forgotPasswordBtn');
+        if (forgotBtn) {
+          forgotBtn.disabled = false;
+          forgotBtn.innerHTML = '<i class="bi bi-key"></i> رمز عبور خود را فراموش کرده‌اید؟';
+        }
+      };
+
+      window.closeEditModal = function() {
+        document.getElementById('editModalOverlay').classList.remove('active');
+        document.body.style.overflow = '';
+        clearMessages();
+        if (window.countdownInterval) {
+          clearInterval(window.countdownInterval);
+          window.countdownInterval = null;
+        }
+      };
+
+      function clearMessages() {
+        document.querySelectorAll('.form-message').forEach(el => {
+          el.classList.remove('show', 'error', 'success');
+          el.textContent = '';
+        });
+      }
+
+      function showFormMessage(tab, message, type) {
+        const msgEl = document.getElementById(tab === 'info' ? 'infoMessage' : 'passwordMessage');
+        if (msgEl) {
+          msgEl.innerHTML = message;
+          msgEl.className = `px-3.5 py-2.5 rounded-lg text-sm mb-3 ${type === 'error' ? 'bg-red-50 text-danger border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`;
+          msgEl.style.display = 'block';
+        }
+      }
+
+      document.getElementById('editModalOverlay').addEventListener('click', function(e) {
+        if (e.target === this) window.closeEditModal();
+      });
+
+      window.switchEditTab = function(tab) {
+        const tabs = document.querySelectorAll('.edit-tab');
+        const contents = document.querySelectorAll('.tab-content');
+
+        tabs.forEach(t => {
+          t.classList.remove('active-tab');
+          t.style.background = 'transparent';
+          t.style.color = '#8e8e8e';
+        });
+
+        contents.forEach(c => {
+          c.classList.remove('active');
+          c.style.display = 'none';
+        });
+
+        const activeTab = document.querySelector(`.edit-tab[data-tab="${tab}"]`);
+        const activeContent = document.getElementById(`tab-${tab}`);
+
+        if (activeTab) {
+          activeTab.classList.add('active-tab');
+          activeTab.style.background = '#0095f6';
+          activeTab.style.color = 'white';
+        }
+
+        if (activeContent) {
+          activeContent.classList.add('active');
+          activeContent.style.display = 'block';
+        }
+
+        clearMessages();
+      };
+
+      const loadUserPosts = async () => {
+        const container = document.getElementById('postsContainer');
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center py-12">
+            <div class="loading-spinner"></div>
+            <p class="text-gray-400 text-sm mt-4">در حال بارگذاری...</p>
+          </div>
+        `;
+
+        try {
+          const resp = await fetch(`/users/${PROFILE_USER_ID}/posts`);
+          const data = await resp.json();
+
+          if (data.success) {
+            displayPostsList(data.posts);
+            document.getElementById('postsCount').textContent = data.posts.length;
+            document.getElementById('postsCountLabel').textContent = `(${data.posts.length})`;
+          } else {
+            showToast(data.message || 'بارگذاری پست‌ها ناموفق بود');
+            container.innerHTML = `
+              <div class="text-center py-10 text-gray-400">
+                <i class="bi bi-exclamation-triangle text-4xl text-gray-300 block mb-3"></i>
+                <p>خطا در بارگذاری پست‌ها</p>
+              </div>
+            `;
+          }
+        } catch (e) {
+          console.error('Load posts error:', e);
+          showToast('خطا در بارگذاری پست‌ها');
+          container.innerHTML = `
+            <div class="text-center py-10 text-gray-400">
+              <i class="bi bi-exclamation-triangle text-4xl text-gray-300 block mb-3"></i>
+              <p>خطا در بارگذاری پست‌ها</p>
+            </div>
+          `;
+        }
+      };
+
+      const displayPostsList = (posts) => {
+        const container = document.getElementById('postsContainer');
+
+        if (!posts || posts.length === 0) {
+          container.innerHTML = `
+            <div class="text-center py-12">
+              <div class="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-4">
+                <i class="bi bi-journal-text text-4xl text-gray-300"></i>
+              </div>
+              <p class="text-gray-400 text-sm">هیچ پستی برای نمایش وجود ندارد</p>
+            </div>
+          `;
+          return;
+        }
+
+        let html = '<div class="flex flex-col gap-3">';
+
+        posts.forEach((post) => {
+          const authorName = post.author?.username || 'unknown';
+          const avatarColor = getAvatarColor(authorName);
+          const initial = getInitial(authorName);
+          const likesCount = post.likesCount || post.likes?.length || 0;
+          const commentsCount = post.commentsCount || post.comments?.length || 0;
+
+          html += `
+            <div class="bg-gray-50 rounded-xl px-4 py-4 cursor-pointer transition-all border border-transparent hover:bg-gray-100 hover:border-gray-200" onclick="window.location.href='/posts/${post._id}'">
+              <div class="flex items-center gap-2 mb-3">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white flex-shrink-0 select-none" style="background:${avatarColor};">${initial}</div>
+                <span class="font-semibold text-sm text-dark">${authorName}</span>
+                <span class="text-xs text-gray-400 mr-auto">${timeAgo(post.createdAt)}</span>
+              </div>
+              <div class="text-sm leading-relaxed text-dark whitespace-pre-wrap break-words mb-3 pr-10">${escapeHtml(post.content)}</div>
+              <div class="flex items-center gap-5 pr-10">
+                <span class="flex items-center gap-1.5 text-xs text-muted">
+                  <i class="bi bi-heart text-sm"></i>
+                  <span>${formatCount(likesCount)}</span>
+                </span>
+                <span class="flex items-center gap-1.5 text-xs text-muted">
+                  <i class="bi bi-chat text-sm"></i>
+                  <span>${formatCount(commentsCount)}</span>
+                </span>
+              </div>
+            </div>
+          `;
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+      };
+
+      window.toggleFollow = async function() {
+        if (isBlocked) {
+          showToast('نمی‌توانید کاربر بلاک شده را دنبال کنید');
+          return;
+        }
+
+        const btn = document.getElementById('followBtn');
+        btn.disabled = true;
+
+        try {
+          const resp = await tokenManager.fetchWithAuth(`/users/${PROFILE_USER_ID}/follow`, {
+            method: 'POST'
+          });
+          const data = await resp.json();
+
+          if (data.success) {
+            isFollowing = data.following;
+
+            if (isFollowing) {
+              btn.textContent = 'دنبال می‌کنید';
+              btn.className = 'bg-gray-100 text-dark border border-border text-sm px-7 py-2 rounded-xl font-semibold hover:opacity-90 transition-all font-sans cursor-pointer';
+            } else {
+              btn.textContent = 'دنبال کنید';
+              btn.className = 'bg-primary text-white text-sm px-7 py-2 rounded-xl font-semibold hover:opacity-90 transition-all font-sans cursor-pointer shadow-lg shadow-primary/20';
+            }
+
+            updateStats();
+          } else {
+            showToast(data.message || 'خطا در بروزرسانی');
+          }
+        } catch (e) {
+          console.error('Follow error:', e);
+          showToast('خطا در بروزرسانی دنبال کردن');
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      window.toggleBlock = async function() {
+        const btn = document.getElementById('blockBtn');
+        btn.disabled = true;
+
+        try {
+          const resp = await tokenManager.fetchWithAuth(`/users/${PROFILE_USER_ID}/block`, {
+            method: 'POST'
+          });
+          const data = await resp.json();
+
+          if (data.success) {
+            isBlocked = data.blocked;
+
+            if (isBlocked) {
+              btn.innerHTML = '<i class="bi bi-check-circle"></i> رفع بلاک';
+              btn.classList.add('text-danger');
+
+              if (isFollowing) {
+                isFollowing = false;
+                const followBtn = document.getElementById('followBtn');
+                followBtn.textContent = 'دنبال کنید';
+                followBtn.className = 'bg-primary text-white text-sm px-7 py-2 rounded-xl font-semibold hover:opacity-90 transition-all font-sans cursor-pointer shadow-lg shadow-primary/20';
+                updateStats();
+              }
+            } else {
+              btn.innerHTML = '<i class="bi bi-slash-circle"></i> بلاک';
+              btn.classList.remove('text-danger');
+            }
+          } else {
+            showToast(data.message || 'خطا در بروزرسانی');
+          }
+        } catch (e) {
+          console.error('Block error:', e);
+          showToast('خطا در بروزرسانی بلاک');
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      const updateStats = async () => {
+        try {
+          const resp = await fetch(`/users/${PROFILE_USER_ID}/followers?page=1&limit=1`);
+          const followersData = await resp.json();
+
+          if (followersData.success) {
+            document.getElementById('followersCount').textContent = formatCount(followersData.total || 0);
+          }
+
+          const resp2 = await fetch(`/users/${PROFILE_USER_ID}/following?page=1&limit=1`);
+          const followingData = await resp2.json();
+
+          if (followingData.success) {
+            document.getElementById('followingCount').textContent = formatCount(followingData.total || 0);
+          }
+        } catch (e) {
+          console.error('Update stats error:', e);
+        }
+      };
+
+      window.openFollowModal = function(type) {
+        currentListType = type;
+        followersPage = 1;
+        followingPage = 1;
+        hasMoreFollowers = false;
+        hasMoreFollowing = false;
+        isLoadingMore = false;
+
+        const modal = document.getElementById('followModalOverlay');
+        const title = document.getElementById('followModalTitle');
+        const body = document.getElementById('followModalBody');
+        const footer = document.getElementById('followModalFooter');
+
+        title.textContent = type === 'followers' ? 'دنبال‌کننده‌ها' : 'دنبال‌شونده‌ها';
+        body.innerHTML = '<div class="flex flex-col items-center justify-center py-12"><div class="loading-spinner"></div></div>';
+        footer.style.display = 'none';
+
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+
+        loadUserList(type, 1);
+      };
+
+      window.closeFollowModal = function() {
+        const modal = document.getElementById('followModalOverlay');
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+        }
+      };
+
+      const loadUserList = async (type, page) => {
+        if (isLoadingMore) return;
+        isLoadingMore = true;
+
+        const body = document.getElementById('followModalBody');
+        const footer = document.getElementById('followModalFooter');
+
+        if (page === 1) {
+          body.innerHTML = '<div class="flex flex-col items-center justify-center py-12"><div class="loading-spinner"></div></div>';
+        } else {
+          footer.style.display = 'flex';
+        }
+
+        try {
+          const resp = await fetch(`/users/${PROFILE_USER_ID}/${type}?page=${page}&limit=20`);
+          const data = await resp.json();
+
+          if (data.success) {
+            const users = type === 'followers' ? data.followers : data.following;
+            const hasMore = data.hasMore;
+
+            if (type === 'followers') {
+              hasMoreFollowers = hasMore;
+            } else {
+              hasMoreFollowing = hasMore;
+            }
+
+            if (page === 1) {
+              if (!users || users.length === 0) {
+                body.innerHTML = `
+                  <div class="text-center py-12 text-gray-400">
+                    <i class="bi bi-people text-4xl text-gray-300 block mb-3"></i>
+                    <p>${type === 'followers' ? 'هنوز دنبال‌کننده‌ای وجود ندارد' : 'هنوز کسی را دنبال نکرده‌اید'}</p>
+                  </div>
+                `;
+              } else {
+                body.innerHTML = users.map(user => createUserItem(user)).join('');
+              }
+            } else {
+              if (users && users.length > 0) {
+                body.insertAdjacentHTML('beforeend', users.map(user => createUserItem(user)).join(''));
+              }
+            }
+
+            footer.style.display = 'none';
+
+            if (hasMore) {
+              setupInfiniteScroll(type, page + 1);
+            }
+          } else {
+            body.innerHTML = '<div class="text-center py-12 text-gray-400"><i class="bi bi-exclamation-triangle text-4xl text-gray-300 block mb-3"></i><p>خطا در بارگذاری</p></div>';
+          }
+        } catch (e) {
+          console.error('Load list error:', e);
+          if (page === 1) {
+            body.innerHTML = '<div class="text-center py-12 text-gray-400"><i class="bi bi-exclamation-triangle text-4xl text-gray-300 block mb-3"></i><p>خطا در بارگذاری</p></div>';
+          }
+          footer.style.display = 'none';
+        } finally {
+          isLoadingMore = false;
+        }
+      };
+
+      const createUserItem = (user) => {
+        const username = user.username || 'unknown';
+        const avatarColor = getAvatarColor(username);
+        const initial = getInitial(username);
+
+        return `
+          <div class="flex items-center gap-3 px-5 py-3 cursor-pointer transition-colors hover:bg-gray-50" onclick="window.location.href='/@${username}'">
+            <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-base text-white flex-shrink-0 select-none shadow-md" style="background:${avatarColor};">${initial}</div>
+            <span class="font-semibold text-sm text-dark">${username}</span>
+          </div>
+        `;
+      };
+
+      const setupInfiniteScroll = (type, nextPage) => {
+        if (observer) {
+          observer.disconnect();
+        }
+
+        const footer = document.getElementById('followModalFooter');
+
+        observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting && !isLoadingMore) {
+              const hasMore = type === 'followers' ? hasMoreFollowers : hasMoreFollowing;
+              if (hasMore) {
+                loadUserList(type, nextPage);
+              }
+            }
+          });
+        }, {
+          root: document.getElementById('followModalBody'),
+          rootMargin: '100px',
+          threshold: 0.1
+        });
+
+        observer.observe(footer);
+      };
+
+      document.getElementById('followModalOverlay').addEventListener('click', function(e) {
+        if (e.target === this) window.closeFollowModal();
+      });
+
+      const editForm = document.getElementById('editProfileForm');
+      if (editForm) {
+        editForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+
+          const username = document.getElementById('editUsername').value.trim();
+          const email = document.getElementById('editEmail').value.trim();
+
+          if (!username || username.length < 3 || username.length > 30) {
+            showFormMessage('info', 'نام کاربری باید بین ۳ تا ۳۰ کاراکتر باشد', 'error');
+            return;
+          }
+
+          if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            showFormMessage('info', 'لطفاً یک ایمیل معتبر وارد کنید', 'error');
+            return;
+          }
+
+          const submitBtn = editForm.querySelector('button[type="submit"]');
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'در حال ذخیره...';
+
+          try {
+            const resp = await tokenManager.fetchWithAuth('/users/profile', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username, email })
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+              showFormMessage('info', 'پروفایل با موفقیت بروزرسانی شد', 'success');
+
+              if (data.user.username !== '<%= profileUser.username %>') {
+                setTimeout(() => {
+                  window.location.href = '/@' + data.user.username;
+                }, 1500);
+              } else {
+                setTimeout(() => window.location.reload(), 1500);
+              }
+            } else {
+              showFormMessage('info', data.message || 'بروزرسانی ناموفق', 'error');
+            }
+          } catch (e) {
+            console.error('Edit profile error:', e);
+            showFormMessage('info', 'خطا در بروزرسانی پروفایل', 'error');
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'ذخیره تغییرات';
+          }
+        });
+      }
+
+      const passwordForm = document.getElementById('editPasswordForm');
+      if (passwordForm) {
+        passwordForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+
+          const current = document.getElementById('currentPassword').value.trim();
+          const newPass = document.getElementById('newPassword').value.trim();
+          const confirm = document.getElementById('confirmPassword').value.trim();
+
+          if (!current) {
+            showFormMessage('password', 'رمز عبور فعلی را وارد کنید', 'error');
+            return;
+          }
+
+          if (!newPass || newPass.length < 6) {
+            showFormMessage('password', 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد', 'error');
+            return;
+          }
+
+          if (newPass !== confirm) {
+            showFormMessage('password', 'رمز عبور جدید با تکرار آن مطابقت ندارد', 'error');
+            return;
+          }
+
+          const submitBtn = passwordForm.querySelector('button[type="submit"]');
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'در حال تغییر...';
+
+          try {
+            const resp = await tokenManager.fetchWithAuth('/auth/change-password', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                currentPassword: current,
+                newPassword: newPass
+              })
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+              showFormMessage('password', 'رمز عبور با موفقیت تغییر کرد', 'success');
+              document.getElementById('currentPassword').value = '';
+              document.getElementById('newPassword').value = '';
+              document.getElementById('confirmPassword').value = '';
+              setTimeout(() => window.closeEditModal(), 1500);
+            } else {
+              showFormMessage('password', data.message || 'تغییر رمز عبور ناموفق', 'error');
+            }
+          } catch (e) {
+            console.error('Change password error:', e);
+            showFormMessage('password', 'خطا در تغییر رمز عبور', 'error');
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'تغییر رمز عبور';
+          }
+        });
+      }
+
+      let countdownInterval = null;
+
+      window.handleForgotPassword = async function() {
+        const email = '<%= profileUser.email || "" %>';
+        const forgotBtn = document.getElementById('forgotPasswordBtn');
+
+        if (!email) {
+          showFormMessage('password', 'ایمیل شما در سیستم ثبت نشده است', 'error');
+          return;
+        }
+
+        forgotBtn.disabled = true;
+        let seconds = 60;
+
+        forgotBtn.innerHTML = `<i class="bi bi-clock"></i> ${seconds} ثانیه تا ارسال مجدد`;
+
+        if (countdownInterval) clearInterval(countdownInterval);
+        countdownInterval = setInterval(() => {
+          seconds--;
+          if (seconds > 0) {
+            forgotBtn.innerHTML = `<i class="bi bi-clock"></i> ${seconds} ثانیه تا ارسال مجدد`;
+          } else {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+            forgotBtn.disabled = false;
+            forgotBtn.innerHTML = '<i class="bi bi-key"></i> رمز عبور خود را فراموش کرده‌اید؟';
+          }
+        }, 1000);
+
+        try {
+          const resp = await fetch('/auth/forgot-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+          });
+          const data = await resp.json();
+
+          if (data.success) {
+            let message = 'لینک بازیابی رمز عبور به ایمیل شما ارسال شد';
+
+            if (data?.redirect) {
+              message += `<br/><a href="${data.redirect}" target="_blank" style="color: #0095f6; text-decoration: underline; display: inline-block; margin-top: 8px;">مشاهده لینک بازیابی</a>`;
+            }
+
+            message += `<br/><span style="font-size: 0.8rem; color: #8e8e8e; display: block; margin-top: 8px;">⏳ لینک به مدت 5 دقیقه معتبر است</span>`;
+
+            showFormMessage('password', message, 'success');
+          } else {
+            showFormMessage('password', data.message || 'خطا در ارسال لینک بازیابی', 'error');
+            if (countdownInterval) {
+              clearInterval(countdownInterval);
+              countdownInterval = null;
+              forgotBtn.disabled = false;
+              forgotBtn.innerHTML = '<i class="bi bi-key"></i> رمز عبور خود را فراموش کرده‌اید؟';
+            }
+          }
+        } catch (e) {
+          console.error('Forgot password error:', e);
+          showFormMessage('password', 'خطا در ارتباط با سرور', 'error');
+          if (countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+            forgotBtn.disabled = false;
+            forgotBtn.innerHTML = '<i class="bi bi-key"></i> رمز عبور خود را فراموش کرده‌اید؟';
+          }
+        }
+      };
+
+      loadUserPosts();
+      updateStats();
+    })();
+  </script>
+</body>
+</html>

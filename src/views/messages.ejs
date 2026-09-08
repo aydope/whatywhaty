@@ -1,0 +1,2495 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>پیام‌ها · واتی‌واتی</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      :root {
+        --bg-primary: #0a0a0a;
+        --bg-secondary: #121212;
+        --bg-tertiary: #1c1c1e;
+        --bg-hover: #2a2a2a;
+        --bg-input: #1c1c1e;
+        --bg-bubble-sent: #007aff;
+        --bg-bubble-received: #1c1c1e;
+        --text-primary: #ffffff;
+        --text-secondary: #8e8e93;
+        --text-tertiary: #636366;
+        --border-color: #2a2a2a;
+        --accent-color: #007aff;
+        --accent-hover: #0055cc;
+        --danger-color: #ff3b30;
+        --success-color: #34c759;
+        --shadow-color: rgba(0, 0, 0, 0.3);
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 20px;
+        --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+      }
+
+      body {
+        font-family:
+          "Vazirmatn",
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        direction: rtl;
+        height: 100dvh;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Telegram-style Header */
+      .tg-header {
+        background: var(--bg-secondary);
+        padding: 8px 16px;
+        padding-top: max(12px, env(safe-area-inset-top));
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+        min-height: 56px;
+        position: relative;
+        z-index: 100;
+      }
+
+      .tg-header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .tg-header-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .tg-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .tg-header-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        font-size: 22px;
+      }
+
+      .tg-header-btn:hover {
+        background: var(--bg-hover);
+      }
+
+      /* Main Container */
+      .tg-container {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+        background: var(--bg-primary);
+        position: relative;
+      }
+
+      /* Conversations List - Telegram Style */
+      .tg-conversations {
+        width: 100%;
+        max-width: 420px;
+        background: var(--bg-secondary);
+        border-left: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 10;
+        position: relative;
+      }
+
+      .tg-conversations-header {
+        padding: 12px 16px;
+        background: var(--bg-secondary);
+        flex-shrink: 0;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .tg-search-wrap {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-md);
+        padding: 8px 14px;
+        transition: all 0.2s;
+        border: 1px solid transparent;
+      }
+
+      .tg-search-wrap:focus-within {
+        border-color: var(--accent-color);
+        background: var(--bg-secondary);
+      }
+
+      .tg-search-wrap .material-symbols-rounded {
+        color: var(--text-tertiary);
+        font-size: 20px;
+      }
+
+      .tg-search-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--text-primary);
+        font-family: "Vazirmatn", sans-serif;
+        font-size: 15px;
+        outline: none;
+        min-height: 24px;
+      }
+
+      .tg-search-input::placeholder {
+        color: var(--text-tertiary);
+      }
+
+      .tg-search-clear {
+        display: none;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border: none;
+        background: var(--bg-hover);
+        color: var(--text-secondary);
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        transition: all 0.2s;
+        flex-shrink: 0;
+      }
+
+      .tg-search-clear.show {
+        display: flex;
+      }
+
+      .tg-search-clear:hover {
+        background: var(--text-tertiary);
+        color: var(--bg-primary);
+      }
+
+      /* Conversation Items */
+      .tg-conv-list {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 4px 0;
+        position: relative;
+      }
+
+      .tg-conv-list::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      .tg-conv-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .tg-conv-list::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 4px;
+      }
+
+      .tg-conv-item {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 16px;
+        cursor: pointer;
+        transition: all 0.15s;
+        position: relative;
+        border-radius: 0;
+        min-height: 68px;
+      }
+
+      .tg-conv-item:hover {
+        background: var(--bg-hover);
+      }
+
+      .tg-conv-item:active {
+        background: var(--bg-tertiary);
+      }
+
+      .tg-conv-item.active {
+        background: var(--bg-tertiary);
+      }
+
+      .tg-avatar {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        font-weight: 600;
+        flex-shrink: 0;
+        position: relative;
+        background: linear-gradient(135deg, #007aff, #5856d6);
+      }
+
+      .tg-online-dot {
+        position: absolute;
+        bottom: 1px;
+        right: 1px;
+        width: 14px;
+        height: 14px;
+        background: var(--success-color);
+        border-radius: 50%;
+        border: 3px solid var(--bg-secondary);
+      }
+
+      .tg-conv-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .tg-conv-name {
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .tg-conv-name .badge-blocked {
+        font-size: 10px;
+        background: rgba(255, 59, 48, 0.15);
+        color: var(--danger-color);
+        padding: 1px 8px;
+        border-radius: 10px;
+        font-weight: 500;
+      }
+
+      .tg-conv-name .badge-blocked-you {
+        font-size: 10px;
+        background: rgba(255, 149, 0, 0.15);
+        color: #ff9500;
+        padding: 1px 8px;
+        border-radius: 10px;
+        font-weight: 500;
+      }
+
+      .tg-conv-last {
+        font-size: 14px;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
+        direction: rtl;
+      }
+
+      .tg-conv-meta {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+
+      .tg-conv-time {
+        font-size: 12px;
+        color: var(--text-tertiary);
+      }
+
+      .tg-unread-badge {
+        background: var(--accent-color);
+        color: white;
+        font-size: 12px;
+        font-weight: 600;
+        min-width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 6px;
+      }
+
+      /* Search Results */
+      .tg-search-results {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--bg-secondary);
+        z-index: 20;
+        overflow-y: auto;
+        display: none;
+        padding: 8px 0;
+      }
+
+      .tg-search-results.show {
+        display: block;
+      }
+
+      .tg-search-results::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      .tg-search-results::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .tg-search-results::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 4px;
+      }
+
+      .tg-search-result {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 16px;
+        cursor: pointer;
+        transition: all 0.15s;
+        border-bottom: 1px solid var(--border-color);
+        animation: tgMsgIn 0.2s ease forwards;
+        opacity: 0;
+        min-height: 64px;
+      }
+
+      .tg-search-result:hover {
+        background: var(--bg-hover);
+      }
+
+      .tg-search-result .result-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #007aff, #5856d6);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+
+      .tg-search-result .result-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .tg-search-result .result-name {
+        font-size: 15px;
+        color: var(--text-primary);
+      }
+
+      .tg-search-result .result-name .highlight {
+        color: var(--accent-color);
+        font-weight: 600;
+      }
+
+      .tg-search-empty {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-tertiary);
+      }
+
+      .tg-search-empty .material-symbols-rounded {
+        font-size: 40px;
+        opacity: 0.4;
+        display: block;
+        margin-bottom: 12px;
+      }
+
+      /* Chat Area - Telegram Style */
+      .tg-chat {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-primary);
+        min-width: 0;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .tg-chat-header {
+        padding: 8px 12px;
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 56px;
+        flex-shrink: 0;
+      }
+
+      .tg-chat-back {
+        display: none;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        transition: all 0.2s;
+        flex-shrink: 0;
+      }
+
+      .tg-chat-back:hover {
+        background: var(--bg-hover);
+      }
+
+      .tg-chat-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #007aff, #5856d6);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: 600;
+        flex-shrink: 0;
+        position: relative;
+        text-decoration: none;
+      }
+
+      .tg-chat-info {
+        flex: 1;
+        min-width: 0;
+        cursor: pointer;
+        text-decoration: none;
+        color: inherit;
+      }
+
+      .tg-chat-name {
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+
+      .tg-chat-status {
+        font-size: 13px;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 20px;
+      }
+
+      .tg-chat-status .typing-dots-inline {
+        display: inline-flex;
+        gap: 3px;
+        align-items: center;
+      }
+
+      .tg-chat-status .typing-dots-inline span {
+        width: 4px;
+        height: 4px;
+        background: var(--accent-color);
+        border-radius: 50%;
+        animation: tgTypingBounce 1.2s infinite ease-in-out;
+      }
+
+      .tg-chat-status .typing-dots-inline span:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+
+      .tg-chat-status .typing-dots-inline span:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+
+      @keyframes tgTypingBounce {
+        0%,
+        60%,
+        100% {
+          transform: translateY(0);
+          opacity: 0.4;
+        }
+        30% {
+          transform: translateY(-4px);
+          opacity: 1;
+        }
+      }
+
+      .tg-blocked-icon {
+        color: var(--danger-color);
+        font-size: 18px;
+      }
+
+      /* Messages Container */
+      .tg-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px 16px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        background: var(--bg-primary);
+      }
+
+      .tg-messages::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      .tg-messages::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .tg-messages::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 4px;
+      }
+
+      /* Date Divider */
+      .tg-date-divider {
+        display: flex;
+        justify-content: center;
+        margin: 8px 0 12px;
+      }
+
+      .tg-date-divider span {
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+        font-size: 12px;
+        padding: 4px 16px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-color);
+      }
+
+      /* Message Bubbles - Telegram Style */
+      .tg-msg-wrap {
+        display: flex;
+        animation: tgMsgIn 0.2s ease;
+        width: 100%;
+        margin: 1px 0;
+      }
+
+      .tg-msg-wrap.sent {
+        justify-content: flex-end;
+      }
+
+      .tg-msg-wrap.received {
+        justify-content: flex-start;
+      }
+
+      @keyframes tgMsgIn {
+        from {
+          opacity: 0;
+          transform: translateY(6px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .tg-msg-bubble {
+        max-width: 78%;
+        padding: 8px 14px;
+        border-radius: var(--radius-lg);
+        position: relative;
+        word-wrap: break-word;
+        line-height: 1.55;
+        font-size: 15px;
+        -webkit-user-select: text;
+        user-select: text;
+        cursor: default;
+        transition: all 0.15s;
+      }
+
+      .tg-msg-wrap.received .tg-msg-bubble {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border-bottom-right-radius: 4px;
+      }
+
+      .tg-msg-wrap.sent .tg-msg-bubble {
+        background: var(--accent-color);
+        color: white;
+        border-bottom-left-radius: 4px;
+      }
+
+      .tg-msg-wrap.deleted .tg-msg-bubble {
+        opacity: 0.4;
+        font-style: italic;
+        background: var(--bg-tertiary) !important;
+        color: var(--text-secondary) !important;
+      }
+
+      .tg-msg-time {
+        font-size: 11px;
+        opacity: 0.6;
+        margin-top: 4px;
+        display: block;
+        text-align: left;
+        direction: ltr;
+      }
+
+      .tg-msg-wrap.sent .tg-msg-time {
+        text-align: right;
+      }
+
+      /* Typing Indicator */
+      .tg-typing {
+        display: none;
+        padding: 8px 16px;
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-lg);
+        border-bottom-right-radius: 4px;
+        align-self: flex-start;
+        margin: 2px 0;
+      }
+
+      .tg-typing.show {
+        display: flex !important;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .tg-typing .typing-dots {
+        display: flex;
+        gap: 4px;
+      }
+
+      .tg-typing .typing-dots span {
+        width: 5px;
+        height: 5px;
+        background: var(--text-secondary);
+        border-radius: 50%;
+        animation: tgTypingBounce 1.4s infinite ease-in-out;
+      }
+
+      .tg-typing .typing-dots span:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+
+      .tg-typing .typing-dots span:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+
+      .tg-typing .typing-username {
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+
+      /* Input Area - Telegram Style */
+      .tg-input-area {
+        padding: 8px 12px;
+        padding-bottom: max(8px, var(--safe-area-bottom));
+        background: var(--bg-secondary);
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .tg-input-wrap {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-xl);
+        padding: 4px 12px;
+        border: 1px solid transparent;
+        transition: all 0.2s;
+      }
+
+      .tg-input-wrap:focus-within {
+        border-color: var(--accent-color);
+        background: var(--bg-secondary);
+      }
+
+      .tg-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--text-primary);
+        font-family: "Vazirmatn", sans-serif;
+        font-size: 15px;
+        padding: 8px 0;
+        outline: none;
+        min-height: 36px;
+      }
+
+      .tg-input::placeholder {
+        color: var(--text-tertiary);
+      }
+
+      .tg-input:disabled {
+        opacity: 0.5;
+      }
+
+      .tg-send-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: none;
+        background: var(--accent-color);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        transition: all 0.2s;
+        flex-shrink: 0;
+      }
+
+      .tg-send-btn:hover {
+        background: var(--accent-hover);
+        transform: scale(1.05);
+      }
+
+      .tg-send-btn:active {
+        transform: scale(0.95);
+      }
+
+      .tg-send-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      /* Empty State */
+      .tg-empty {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-tertiary);
+        text-align: center;
+        padding: 40px;
+        gap: 12px;
+      }
+
+      .tg-empty .material-symbols-rounded {
+        font-size: 56px;
+        color: var(--border-color);
+      }
+
+      .tg-empty h3 {
+        font-size: 18px;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+
+      .tg-empty p {
+        font-size: 14px;
+        color: var(--text-tertiary);
+        max-width: 260px;
+      }
+
+      /* Blocked Notices */
+      .tg-blocked-notice {
+        background: rgba(255, 59, 48, 0.08);
+        border: 1px solid rgba(255, 59, 48, 0.2);
+        color: var(--danger-color);
+        padding: 12px 16px;
+        margin: 8px 16px;
+        border-radius: var(--radius-md);
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .tg-blocked-by-you {
+        background: rgba(255, 149, 0, 0.08);
+        border: 1px solid rgba(255, 149, 0, 0.2);
+        color: #ff9500;
+      }
+
+      /* Context Menu - Telegram Style */
+      .tg-context-menu {
+        position: fixed;
+        background: var(--bg-secondary);
+        border-radius: var(--radius-md);
+        padding: 6px 0;
+        min-width: 200px;
+        box-shadow: 0 8px 32px var(--shadow-color);
+        border: 1px solid var(--border-color);
+        z-index: 9999;
+        display: none;
+        animation: tgMsgIn 0.15s ease;
+      }
+
+      .tg-context-menu.show {
+        display: block;
+      }
+
+      .tg-context-item {
+        padding: 10px 18px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--text-primary);
+        font-size: 14px;
+        font-family: "Vazirmatn", sans-serif;
+        transition: all 0.15s;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: right;
+      }
+
+      .tg-context-item:hover {
+        background: var(--bg-hover);
+      }
+
+      .tg-context-item.danger {
+        color: var(--danger-color);
+      }
+
+      /* Modal - Telegram Style */
+      .tg-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(8px);
+        z-index: 9999;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        animation: tgFadeIn 0.2s ease;
+      }
+
+      .tg-modal-overlay.active {
+        display: flex;
+      }
+
+      @keyframes tgFadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .tg-modal {
+        background: var(--bg-secondary);
+        border-radius: var(--radius-lg);
+        padding: 28px 24px 20px;
+        max-width: 340px;
+        width: 90%;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        animation: tgMsgIn 0.25s ease;
+      }
+
+      .tg-modal .icon-wrap {
+        width: 56px;
+        height: 56px;
+        background: rgba(255, 59, 48, 0.12);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 14px;
+      }
+
+      .tg-modal .icon-wrap .material-symbols-rounded {
+        font-size: 28px;
+        color: var(--danger-color);
+      }
+
+      .tg-modal h3 {
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+
+      .tg-modal p {
+        font-size: 14px;
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+        line-height: 1.6;
+      }
+
+      .tg-modal .for-both-option {
+        display: none;
+        margin-bottom: 16px;
+        padding: 12px;
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-sm);
+        text-align: right;
+        border: 1px solid var(--border-color);
+      }
+
+      .tg-modal .for-both-option.show {
+        display: block;
+      }
+
+      .tg-modal .for-both-option label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: var(--text-primary);
+      }
+
+      .tg-modal .for-both-option input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--accent-color);
+        cursor: pointer;
+      }
+
+      .tg-modal .buttons {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+      }
+
+      .tg-modal .btn {
+        padding: 10px 24px;
+        border-radius: var(--radius-sm);
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s;
+      }
+
+      .btn-cancel {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+      }
+
+      .btn-cancel:hover {
+        background: var(--bg-hover);
+      }
+
+      .btn-danger {
+        background: var(--danger-color);
+        color: white;
+      }
+
+      .btn-danger:hover {
+        opacity: 0.9;
+      }
+
+      /* Toast - Telegram Style */
+      .tg-toast-container {
+        position: fixed;
+        top: 70px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1000;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .tg-toast {
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        padding: 12px 20px;
+        border-radius: var(--radius-md);
+        font-weight: 500;
+        font-size: 14px;
+        box-shadow: 0 8px 24px var(--shadow-color);
+        animation: tgToastIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        pointer-events: auto;
+        max-width: 320px;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        backdrop-filter: blur(12px);
+      }
+
+      .tg-toast.error {
+        background: var(--danger-color);
+        color: white;
+        border-color: var(--danger-color);
+      }
+
+      .tg-toast.success {
+        background: var(--success-color);
+        color: white;
+        border-color: var(--success-color);
+      }
+
+      @keyframes tgToastIn {
+        from {
+          opacity: 0;
+          transform: translateY(-20px) scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      /* Mobile Responsive */
+      @media (max-width: 768px) {
+        .tg-conversations {
+          max-width: 100%;
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 10;
+          border-left: none;
+          transform: translateX(0);
+        }
+
+        .tg-conversations.chat-open {
+          transform: translateX(100%);
+        }
+
+        .tg-chat {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 5;
+          transform: translateX(100%);
+        }
+
+        .tg-chat.chat-open {
+          transform: translateX(0);
+        }
+
+        .tg-chat-back {
+          display: flex;
+        }
+
+        .tg-conv-item {
+          padding: 10px 12px;
+          min-height: 60px;
+        }
+
+        .tg-avatar {
+          width: 44px;
+          height: 44px;
+          font-size: 16px;
+        }
+
+        .tg-msg-bubble {
+          max-width: 85%;
+          font-size: 14px;
+          padding: 7px 12px;
+        }
+
+        .tg-header {
+          padding: 6px 12px;
+          min-height: 48px;
+        }
+
+        .tg-header-title {
+          font-size: 16px;
+        }
+
+        .tg-conv-name {
+          font-size: 14px;
+        }
+
+        .tg-conv-last {
+          font-size: 13px;
+        }
+
+        .tg-input {
+          font-size: 14px;
+        }
+
+        .tg-send-btn {
+          width: 40px;
+          height: 40px;
+          font-size: 20px;
+        }
+
+        .tg-input-wrap {
+          padding: 2px 10px;
+        }
+
+        .tg-messages {
+          padding: 8px 10px 4px;
+        }
+
+        .tg-search-input {
+          font-size: 14px;
+        }
+      }
+
+      @media (min-width: 769px) {
+        .tg-chat-back {
+          display: none !important;
+        }
+
+        .tg-conversations.chat-open {
+          transform: none !important;
+        }
+
+        .tg-chat.chat-open {
+          transform: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="tg-header">
+      <div class="tg-header-left">
+        <span class="tg-header-title">واتی‌واتی</span>
+      </div>
+      <div class="tg-header-actions">
+        <button
+          class="tg-header-btn"
+          onclick="location.href = '/'"
+          aria-label="خانه"
+        >
+          <span class="material-symbols-rounded">home</span>
+        </button>
+        <button
+          class="tg-header-btn"
+          onclick="location.href = '/explore'"
+          aria-label="اکتشاف"
+        >
+          <span class="material-symbols-rounded">explore</span>
+        </button>
+        <button
+          class="tg-header-btn"
+          onclick="location.href = '/@<%= user.username %>'"
+          aria-label="پروفایل"
+        >
+          <span class="material-symbols-rounded">person</span>
+        </button>
+        <button
+          class="tg-header-btn"
+          onclick="document.querySelector('form').submit()"
+          aria-label="خروج"
+        >
+          <span
+            class="material-symbols-rounded"
+            style="color: var(--danger-color)"
+            >logout</span
+          >
+        </button>
+        <form action="/auth/logout" method="POST" style="display: none"></form>
+      </div>
+    </header>
+
+    <div class="tg-container">
+      <div class="tg-conversations" id="sidebar">
+        <div class="tg-conversations-header">
+          <div class="tg-search-wrap">
+            <span class="material-symbols-rounded">search</span>
+            <input
+              class="tg-search-input"
+              id="searchUserInput"
+              placeholder="جستجوی کاربر..."
+              oninput="handleSearchInput(event)"
+              autocomplete="off"
+            />
+            <button
+              class="tg-search-clear"
+              id="searchClearBtn"
+              onclick="clearSearch()"
+            >
+              <span class="material-symbols-rounded" style="font-size: 18px"
+                >close</span
+              >
+            </button>
+          </div>
+        </div>
+
+        <div class="tg-conv-list" id="conversationsListWrapper">
+          <div id="conversationsContainer"></div>
+          <div class="tg-search-results" id="searchResultsOverlay">
+            <div id="searchResultsContent"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tg-chat" id="chatArea">
+        <div class="tg-chat-header" id="chatHeader" style="display: none">
+          <button class="tg-chat-back" onclick="closeChatMobile()">
+            <span class="material-symbols-rounded">arrow_back</span>
+          </button>
+          <a href="#" id="chatProfileLink" class="tg-chat-avatar">
+            <span id="avatarLetter"></span>
+            <div
+              class="tg-online-dot"
+              id="onlineDot"
+              style="display: none"
+            ></div>
+          </a>
+          <a
+            href="#"
+            id="chatProfileLinkText"
+            class="tg-chat-info"
+            style="text-decoration: none; color: inherit"
+          >
+            <div class="tg-chat-name" id="chatUsername"></div>
+            <div class="tg-chat-status" id="chatStatus">
+              <span id="statusText">آفلاین</span>
+              <span id="typingHeaderIndicator" style="display: none">
+                <span class="typing-dots-inline"
+                  ><span></span><span></span><span></span
+                ></span>
+                <span style="color: var(--accent-color)">در حال تایپ...</span>
+              </span>
+              <span
+                id="blockedStatusIcon"
+                style="display: none"
+                class="tg-blocked-icon material-symbols-rounded"
+                >block</span
+              >
+            </div>
+          </a>
+        </div>
+
+        <div id="blockedNotice" class="tg-blocked-notice" style="display: none">
+          <span class="material-symbols-rounded" style="font-size: 22px"
+            >block</span
+          >
+          <div>
+            <div style="font-weight: 500; margin-bottom: 2px">دسترسی محدود</div>
+            <span id="blockedMessage" style="font-size: 13px; opacity: 0.8"
+              >شما توسط این کاربر بلاک شده‌اید</span
+            >
+          </div>
+        </div>
+        <div
+          id="blockedByYouNotice"
+          class="tg-blocked-notice tg-blocked-by-you"
+          style="display: none"
+        >
+          <span class="material-symbols-rounded" style="font-size: 22px"
+            >block</span
+          >
+          <div>
+            <div style="font-weight: 500; margin-bottom: 2px">
+              کاربر بلاک شده
+            </div>
+            <span style="font-size: 13px; opacity: 0.8"
+              >شما این کاربر را بلاک کرده‌اید</span
+            >
+          </div>
+        </div>
+
+        <div id="chatEmpty" class="tg-empty">
+          <span class="material-symbols-rounded">chat_bubble_outline</span>
+          <h3>یک گفتگو را انتخاب کنید</h3>
+          <p>از لیست پیام‌ها یک کاربر را انتخاب کنید</p>
+        </div>
+
+        <div
+          class="tg-messages"
+          id="messagesContainer"
+          style="display: none"
+        ></div>
+
+        <div class="tg-input-area" id="messageInputArea" style="display: none">
+          <div class="tg-input-wrap">
+            <input
+              class="tg-input"
+              id="messageText"
+              placeholder="پیام..."
+              maxlength="1000"
+              onkeydown="handleKeyDown(event)"
+              oninput="handleTyping()"
+              autocomplete="off"
+            />
+          </div>
+          <button class="tg-send-btn" id="sendBtn" onclick="sendMessage()">
+            <span class="material-symbols-rounded" style="font-size: 22px"
+              >send</span
+            >
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tg-context-menu" id="contextMenu">
+      <button class="tg-context-item danger" id="contextDeleteBtn">
+        <span class="material-symbols-rounded" style="font-size: 20px"
+          >delete</span
+        >
+        حذف پیام
+      </button>
+    </div>
+
+    <div class="tg-modal-overlay" id="confirmDeleteModal">
+      <div class="tg-modal">
+        <div class="icon-wrap">
+          <span class="material-symbols-rounded">delete</span>
+        </div>
+        <h3>حذف پیام</h3>
+        <p>آیا مطمئن هستید که می‌خواهید این پیام را حذف کنید؟</p>
+        <div class="for-both-option" id="forBothOption">
+          <label>
+            <input type="checkbox" id="forBothCheckbox" /> حذف برای هر دو طرف
+          </label>
+        </div>
+        <div class="buttons">
+          <button class="btn btn-cancel" onclick="closeDeleteModal()">
+            انصراف
+          </button>
+          <button class="btn btn-danger" id="confirmDeleteBtn">حذف</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tg-toast-container" id="toastContainer"></div>
+
+    <%- include('partials/scripts') %>
+    <script>
+      var currentUserId = "<%= user._id %>";
+      var currentUsername = "<%= user.username %>";
+      var preselectedUser = '<%= preselectedUser || "" %>';
+      var currentConversation = null;
+      var currentConversationUsername = null;
+      var isBlockedByRecipient = false;
+      var isBlockedByYou = false;
+      var deleteTargetMessageId = null;
+      var contextTargetMessageId = null;
+      var displayedDates = new Set();
+      var typingTimer = null;
+      var TYPING_DEBOUNCE_DELAY = 2000;
+      var isCurrentlyTyping = false;
+      var IDLE_TIMEOUT = 5 * 60 * 1000;
+      var idleTimer = null;
+      var isUserIdle = false;
+      var activityInterval = null;
+      var searchTimeout = null;
+      var isMobile = window.innerWidth <= 768;
+      var ws = null;
+
+      if (typeof window.socketAPI !== "undefined" && window.socketAPI.getSocket)
+        ws = window.socketAPI.getSocket();
+      if (!ws && window.socket) ws = window.socket;
+      if (!ws) {
+        ws = io({
+          auth: { token: getAccessToken() },
+          transports: ["websocket", "polling"],
+        });
+        window.socket = ws;
+      }
+
+      function setupWebSocketListeners() {
+        if (!ws) return;
+        ws.off("connect");
+        ws.off("message:new");
+        ws.off("message:error");
+        ws.off("message:deleted");
+        ws.off("message:deleted:self");
+        ws.off("typing:start");
+        ws.off("typing:stop");
+        ws.off("user:online");
+        ws.off("user:offline");
+        ws.off("messages:unread_count");
+        ws.off("user:blocked");
+        ws.off("user:unblocked");
+
+        ws.on("connect", function () {
+          sendActivePing();
+          startActivityTracking();
+        });
+
+        ws.on("message:new", function (message) {
+          var senderId = message.sender?._id || message.sender;
+          var isCurrentChat = currentConversation === senderId;
+
+          if (isCurrentChat && !isBlockedByRecipient && !isBlockedByYou) {
+            appendMessageToChat(message);
+            ws.emit("message:read", { userId: senderId });
+            fetch("/messages/" + senderId + "/read", {
+              method: "POST",
+              credentials: "include",
+            }).catch(() => {});
+          }
+
+          loadConversations();
+          updateUnreadCount();
+        });
+
+        ws.on("message:error", function (error) {
+          if (error.message && error.message.includes("بلاک شده"))
+            handleBlockedStatus(true, false, error.message);
+          showNotificationToast({
+            type: "error",
+            message: error.message || "خطا",
+          });
+        });
+
+        ws.on("message:deleted", function (data) {
+          handleMessageDeleted(data);
+        });
+
+        ws.on("message:deleted:self", function (data) {
+          handleMessageDeleted(data);
+        });
+
+        ws.on("typing:start", function (data) {
+          if (
+            currentConversation === data.userId &&
+            !isBlockedByRecipient &&
+            !isBlockedByYou
+          ) {
+            showTypingIndicator(data.username);
+            showTypingInHeader();
+          }
+        });
+
+        ws.on("typing:stop", function (data) {
+          if (currentConversation === data.userId) {
+            hideTypingIndicator();
+            hideTypingInHeader();
+          }
+        });
+
+        ws.on("user:online", function (data) {
+          if (
+            currentConversation === data.userId &&
+            !isBlockedByRecipient &&
+            !isBlockedByYou
+          )
+            updateOnlineStatus(true);
+          loadConversations();
+        });
+
+        ws.on("user:offline", function (data) {
+          if (currentConversation === data.userId) updateOnlineStatus(false);
+          loadConversations();
+        });
+
+        ws.on("messages:unread_count", function (data) {
+          updateUnreadBadge(data.count);
+        });
+
+        ws.on("user:blocked", function (data) {
+          if (currentConversation === data.userId)
+            handleBlockedStatus(true, false, "شما توسط این کاربر بلاک شده‌اید");
+          loadConversations();
+        });
+
+        ws.on("user:unblocked", function (data) {
+          if (currentConversation === data.userId) {
+            handleBlockedStatus(false, false);
+            loadMessages(currentConversation);
+          }
+          loadConversations();
+        });
+      }
+
+      if (ws && ws.connected) setupWebSocketListeners();
+      else if (ws)
+        ws.once("connect", function () {
+          setupWebSocketListeners();
+        });
+
+      function handleBlockedStatus(blockedByRecipient, blockedByYou, message) {
+        isBlockedByRecipient = blockedByRecipient;
+        isBlockedByYou = blockedByYou;
+        var noticeRecipient = document.getElementById("blockedNotice");
+        var noticeYou = document.getElementById("blockedByYouNotice");
+        var input = document.getElementById("messageText");
+        var sendBtn = document.getElementById("sendBtn");
+        var blockedMsg = document.getElementById("blockedMessage");
+        var blockedIcon = document.getElementById("blockedStatusIcon");
+        var statusText = document.getElementById("statusText");
+        var onlineDot = document.getElementById("onlineDot");
+
+        if (blockedByRecipient || blockedByYou) {
+          if (onlineDot) onlineDot.style.display = "none";
+          if (statusText) {
+            statusText.textContent = "وضعیت نامشخص";
+            statusText.style.color = "var(--text-secondary)";
+          }
+          if (blockedIcon) blockedIcon.style.display = "inline";
+          hideTypingInHeader();
+        } else {
+          if (blockedIcon) blockedIcon.style.display = "none";
+          if (statusText) statusText.style.color = "var(--text-secondary)";
+        }
+
+        if (blockedByRecipient) {
+          if (noticeRecipient) noticeRecipient.style.display = "flex";
+          if (noticeYou) noticeYou.style.display = "none";
+          if (blockedMsg && message) blockedMsg.textContent = message;
+          if (input) {
+            input.disabled = true;
+            input.placeholder = "شما امکان ارسال پیام ندارید";
+          }
+          if (sendBtn) sendBtn.disabled = true;
+        } else if (blockedByYou) {
+          if (noticeYou) noticeYou.style.display = "flex";
+          if (noticeRecipient) noticeRecipient.style.display = "none";
+          if (input) {
+            input.disabled = true;
+            input.placeholder =
+              "برای ارسال پیام باید کاربر را از بلاک خارج کنید";
+          }
+          if (sendBtn) sendBtn.disabled = true;
+        } else {
+          if (noticeRecipient) noticeRecipient.style.display = "none";
+          if (noticeYou) noticeYou.style.display = "none";
+          if (input) {
+            input.disabled = false;
+            input.placeholder = "پیام...";
+          }
+          if (sendBtn) sendBtn.disabled = false;
+          if (blockedIcon) blockedIcon.style.display = "none";
+        }
+      }
+
+      function showTypingInHeader() {
+        var typingIndicator = document.getElementById("typingHeaderIndicator");
+        var statusText = document.getElementById("statusText");
+        if (typingIndicator && statusText) {
+          statusText.style.display = "none";
+          typingIndicator.style.display = "inline-flex";
+        }
+      }
+
+      function hideTypingInHeader() {
+        var typingIndicator = document.getElementById("typingHeaderIndicator");
+        var statusText = document.getElementById("statusText");
+        if (typingIndicator && statusText) {
+          typingIndicator.style.display = "none";
+          statusText.style.display = "inline";
+        }
+      }
+
+      function handleMessageDeleted(data) {
+        var wrapper = document.querySelector(
+          '.tg-msg-wrap[data-message-id="' + data.messageId + '"]',
+        );
+        if (wrapper) {
+          if (data.forBoth) {
+            wrapper.style.transition = "all 0.2s";
+            wrapper.style.opacity = "0";
+            wrapper.style.transform = "scale(0.95)";
+            setTimeout(function () {
+              wrapper.remove();
+            }, 200);
+          } else {
+            wrapper.classList.add("deleted");
+            var bubble = wrapper.querySelector(".tg-msg-bubble");
+            if (bubble)
+              bubble.innerHTML =
+                'این پیام حذف شده است <span class="tg-msg-time">' +
+                formatTime(new Date()) +
+                "</span>";
+            var trigger = wrapper.querySelector(".context-trigger");
+            if (trigger) trigger.remove();
+          }
+        }
+        loadConversations();
+      }
+
+      var contextMenu = document.getElementById("contextMenu");
+
+      function showContextMenu(e, messageId, isDeleted) {
+        if (isDeleted) return;
+        e.preventDefault();
+        contextTargetMessageId = messageId;
+        var x = e.clientX || e.touches?.[0]?.clientX || 0;
+        var y = e.clientY || e.touches?.[0]?.clientY || 0;
+        if (x + 200 > window.innerWidth) x = window.innerWidth - 210;
+        if (y + 40 > window.innerHeight) y = window.innerHeight - 50;
+        contextMenu.style.left = Math.max(8, x) + "px";
+        contextMenu.style.top = Math.max(8, y) + "px";
+        contextMenu.classList.add("show");
+      }
+
+      function hideContextMenu() {
+        contextMenu.classList.remove("show");
+        contextTargetMessageId = null;
+      }
+
+      document.addEventListener("click", function (e) {
+        if (!contextMenu.contains(e.target)) hideContextMenu();
+      });
+
+      document.addEventListener("scroll", hideContextMenu);
+
+      document
+        .getElementById("contextDeleteBtn")
+        .addEventListener("click", function () {
+          if (contextTargetMessageId) {
+            var id = contextTargetMessageId;
+            hideContextMenu();
+            openDeleteModal(id);
+          }
+        });
+
+      function openDeleteModal(messageId) {
+        deleteTargetMessageId = messageId;
+        var wrapper = document.querySelector(
+          '.tg-msg-wrap[data-message-id="' + messageId + '"]',
+        );
+        var isSent = wrapper && wrapper.classList.contains("sent");
+        var opt = document.getElementById("forBothOption");
+        if (opt) {
+          if (isSent) opt.classList.add("show");
+          else {
+            opt.classList.remove("show");
+            document.getElementById("forBothCheckbox").checked = false;
+          }
+        }
+        document.getElementById("confirmDeleteModal").classList.add("active");
+      }
+
+      function closeDeleteModal() {
+        document
+          .getElementById("confirmDeleteModal")
+          .classList.remove("active");
+        deleteTargetMessageId = null;
+        document.getElementById("forBothCheckbox").checked = false;
+      }
+
+      document
+        .getElementById("confirmDeleteBtn")
+        .addEventListener("click", async function () {
+          if (!deleteTargetMessageId) return;
+          var btn = this;
+          btn.disabled = true;
+          btn.textContent = "در حال حذف...";
+          var forBoth =
+            document.getElementById("forBothCheckbox")?.checked || false;
+          try {
+            var res = await fetch("/messages/" + deleteTargetMessageId, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ forBoth }),
+            });
+            var data = await res.json();
+            if (data.success) {
+              showNotificationToast({
+                type: "success",
+                message: data.message || "پیام حذف شد",
+              });
+              handleMessageDeleted({
+                messageId: deleteTargetMessageId,
+                forBoth: data.forBoth,
+              });
+              closeDeleteModal();
+            } else {
+              if (data.message && data.message.includes("بلاک شده"))
+                handleBlockedStatus(true, false, data.message);
+              showNotificationToast({
+                type: "error",
+                message: data.message || "خطا",
+              });
+            }
+          } catch (err) {
+            showNotificationToast({
+              type: "error",
+              message: "خطا در حذف پیام",
+            });
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "حذف";
+          }
+        });
+
+      document
+        .getElementById("confirmDeleteModal")
+        .addEventListener("click", function (e) {
+          if (e.target === this) closeDeleteModal();
+        });
+
+      function sendActivePing() {
+        if (ws && ws.connected)
+          ws.emit("user:active", { timestamp: Date.now() });
+      }
+
+      function resetIdleTimer() {
+        if (isUserIdle) {
+          isUserIdle = false;
+          sendActivePing();
+        }
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(function () {
+          isUserIdle = true;
+        }, IDLE_TIMEOUT);
+      }
+
+      function startActivityTracking() {
+        if (activityInterval) clearInterval(activityInterval);
+        activityInterval = setInterval(function () {
+          if (!isUserIdle) sendActivePing();
+        }, 30000);
+        [
+          "mousedown",
+          "mousemove",
+          "keydown",
+          "scroll",
+          "touchstart",
+          "touchmove",
+          "click",
+        ].forEach(function (ev) {
+          document.addEventListener(ev, resetIdleTimer, { passive: true });
+        });
+        resetIdleTimer();
+        document.addEventListener("visibilitychange", function () {
+          if (document.hidden) isUserIdle = true;
+          else {
+            isUserIdle = false;
+            resetIdleTimer();
+          }
+        });
+      }
+
+      function handleSearchInput(e) {
+        var input = document.getElementById("searchUserInput");
+        var q = input.value.trim();
+        document
+          .getElementById("searchClearBtn")
+          .classList.toggle("show", q.length > 0);
+        clearTimeout(searchTimeout);
+
+        if (!q) {
+          document
+            .getElementById("searchResultsOverlay")
+            .classList.remove("show");
+          document.getElementById("conversationsListWrapper").scrollTop = 0;
+        } else {
+          if (e) {
+            e.stopPropagation();
+          }
+          searchTimeout = setTimeout(function () {
+            performSearch(q);
+          }, 300);
+        }
+      }
+
+      function clearSearch() {
+        document.getElementById("searchUserInput").value = "";
+        document.getElementById("searchClearBtn").classList.remove("show");
+        document
+          .getElementById("searchResultsOverlay")
+          .classList.remove("show");
+        document.getElementById("searchUserInput").focus();
+        document.getElementById("conversationsListWrapper").scrollTop = 0;
+      }
+
+      async function performSearch(query) {
+        var overlay = document.getElementById("searchResultsOverlay");
+        var content = document.getElementById("searchResultsContent");
+        var wrapper = document.getElementById("conversationsListWrapper");
+
+        overlay.classList.add("show");
+        wrapper.scrollTop = 0;
+
+        content.innerHTML =
+          '<div style="text-align:center;padding:20px;color:var(--text-tertiary);">جستجو...</div>';
+        try {
+          var res = await fetch(
+            "/users/search?q=" + encodeURIComponent(query),
+            { credentials: "include" },
+          );
+          var data = await res.json();
+          if (data.success && data.users?.length) {
+            content.innerHTML = data.users
+              .map(function (u, i) {
+                var badges = "";
+                if (u.isBlockedByThem)
+                  badges += ' <span class="badge-blocked">بلاک</span>';
+                if (u.isBlockedByYou)
+                  badges += ' <span class="badge-blocked-you">بلاک شده</span>';
+                return (
+                  '<div class="tg-search-result" onclick="selectSearchResult(\'' +
+                  u._id +
+                  "','" +
+                  (u.username || "").replace(/'/g, "\\'") +
+                  '\')" style="animation-delay:' +
+                  i * 0.02 +
+                  's">' +
+                  '<div class="result-avatar">' +
+                  (u.username || "?").charAt(0).toUpperCase() +
+                  "</div>" +
+                  '<div class="result-info">' +
+                  '<div class="result-name">' +
+                  highlightMatch(u.username, query) +
+                  badges +
+                  "</div>" +
+                  "</div>" +
+                  "</div>"
+                );
+              })
+              .join("");
+          } else
+            content.innerHTML =
+              '<div class="tg-search-empty"><span class="material-symbols-rounded">person_off</span><p>کاربری یافت نشد</p></div>';
+        } catch (err) {
+          content.innerHTML =
+            '<div class="tg-search-empty"><span class="material-symbols-rounded">error</span><p>خطا</p></div>';
+        }
+      }
+
+      function highlightMatch(text, query) {
+        if (!text || !query) return escapeHtml(text);
+        var regex = new RegExp(
+          "(" + query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")",
+          "gi",
+        );
+        return escapeHtml(text).replace(
+          regex,
+          '<span class="highlight">$1</span>',
+        );
+      }
+
+      function selectSearchResult(userId, username) {
+        clearSearch();
+        openConversation(userId, username);
+      }
+
+      function getAccessToken() {
+        var m = document.cookie.match(/accessToken=([^;]+)/);
+        return m ? m[1] : null;
+      }
+
+      function escapeHtml(t) {
+        var d = document.createElement("div");
+        d.textContent = t || "";
+        return d.innerHTML;
+      }
+
+      function formatTime(d) {
+        try {
+          var dt = new Date(d);
+          return isNaN(dt.getTime())
+            ? ""
+            : dt.toLocaleTimeString("fa-IR-u-num-latn", {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+        } catch (e) {
+          return "";
+        }
+      }
+
+      function formatDate(d) {
+        try {
+          var dt = new Date(d);
+          if (isNaN(dt.getTime())) return "";
+          var today = new Date();
+          var yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          if (dt.toDateString() === today.toDateString()) return "امروز";
+          if (dt.toDateString() === yesterday.toDateString()) return "دیروز";
+          return dt.toLocaleDateString("fa-IR-u-num-latn", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          });
+        } catch (e) {
+          return "";
+        }
+      }
+
+      function getDateKey(d) {
+        return new Date(d).toDateString();
+      }
+
+      function updateOnlineStatus(online) {
+        if (isBlockedByRecipient || isBlockedByYou) {
+          document.getElementById("onlineDot").style.display = "none";
+          document.getElementById("statusText").textContent = "وضعیت نامشخص";
+          return;
+        }
+        var dot = document.getElementById("onlineDot");
+        var st = document.getElementById("statusText");
+        if (dot && st) {
+          dot.style.display = online ? "block" : "none";
+          st.textContent = online ? "آنلاین" : "آفلاین";
+          st.style.color = online
+            ? "var(--success-color)"
+            : "var(--text-secondary)";
+        }
+      }
+
+      async function updateUnreadCount() {
+        try {
+          var r = await fetch("/messages/unread/count", {
+            credentials: "include",
+          });
+          var d = await r.json();
+          if (d.success) {
+            var badge = document.getElementById("unreadBadgeNav");
+            if (badge) {
+              if (d.count > 0) {
+                badge.textContent = d.count;
+                badge.classList.remove("hidden");
+              } else {
+                badge.classList.add("hidden");
+              }
+            }
+            document.title =
+              d.count > 0
+                ? "(" + d.count + ") پیام‌ها · واتی‌واتی"
+                : "پیام‌ها · واتی‌واتی";
+          }
+        } catch (e) {}
+      }
+
+      function openChatMobile() {
+        if (isMobile) {
+          document.getElementById("sidebar").classList.add("chat-open");
+          document.getElementById("chatArea").classList.add("chat-open");
+        }
+      }
+
+      function closeChatMobile() {
+        if (isMobile) {
+          document.getElementById("sidebar").classList.remove("chat-open");
+          document.getElementById("chatArea").classList.remove("chat-open");
+          stopTyping();
+          hideTypingIndicator();
+          hideTypingInHeader();
+
+          const url = new URL(window.location);
+          url.searchParams.delete("user");
+          window.history.pushState({}, "", url);
+        }
+      }
+
+      function showTypingIndicator(username) {
+        if (isBlockedByRecipient || isBlockedByYou) return;
+        var ind = document.getElementById("typingIndicator");
+        if (!ind) {
+          createTypingIndicator();
+          ind = document.getElementById("typingIndicator");
+        }
+        if (ind) {
+          ind.querySelector("#typingUsername").textContent =
+            username || "کاربر";
+          ind.classList.add("show");
+          ind.style.display = "flex";
+        }
+      }
+
+      function hideTypingIndicator() {
+        var ind = document.getElementById("typingIndicator");
+        if (ind) {
+          ind.classList.remove("show");
+          ind.style.display = "none";
+        }
+      }
+
+      function createTypingIndicator() {
+        var container = document.getElementById("messagesContainer");
+        if (!container) return;
+        var existing = document.getElementById("typingIndicator");
+        if (existing) existing.remove();
+        var el = document.createElement("div");
+        el.id = "typingIndicator";
+        el.className = "tg-typing";
+        el.innerHTML =
+          '<span id="typingUsername" class="typing-username">کاربر</span><span class="typing-dots"><span></span><span></span><span></span></span>';
+        container.appendChild(el);
+      }
+
+      function handleTyping() {
+        if (!currentConversation || isBlockedByRecipient || isBlockedByYou)
+          return;
+        var input = document.getElementById("messageText");
+        if (!input || !input.value.trim()) {
+          stopTyping();
+          return;
+        }
+        clearTimeout(typingTimer);
+        if (!isCurrentlyTyping) {
+          isCurrentlyTyping = true;
+          if (ws && ws.connected)
+            ws.emit("typing:start", {
+              recipientId: currentConversation,
+              username: currentUsername,
+            });
+        }
+        typingTimer = setTimeout(function () {
+          stopTyping();
+        }, TYPING_DEBOUNCE_DELAY);
+      }
+
+      function stopTyping() {
+        if (!isCurrentlyTyping) return;
+        clearTimeout(typingTimer);
+        isCurrentlyTyping = false;
+        if (currentConversation && ws && ws.connected)
+          ws.emit("typing:stop", { recipientId: currentConversation });
+      }
+
+      function handleKeyDown(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      }
+
+      async function loadConversations() {
+        try {
+          var res = await fetch("/messages/conversations", {
+            credentials: "include",
+          });
+          var data = await res.json();
+          if (data.success)
+            displayConversations(data.conversations || data.data || []);
+        } catch (err) {}
+      }
+
+      function displayConversations(convs) {
+        var container = document.getElementById("conversationsContainer");
+        container.innerHTML = "";
+        if (!convs.length) {
+          container.innerHTML =
+            '<div style="text-align:center;padding:40px 20px;color:var(--text-tertiary);"><span class="material-symbols-rounded" style="font-size:48px;opacity:0.3;display:block;margin-bottom:12px;">inbox</span><p style="font-size:14px;">هنوز پیامی ندارید</p></div>';
+          return;
+        }
+        convs.forEach(function (c) {
+          var user = c.user || {};
+          var div = document.createElement("div");
+          div.className =
+            "tg-conv-item" +
+            (currentConversation === user._id ? " active" : "");
+          div.onclick = function () {
+            openConversation(user._id, user.username);
+          };
+          var badges = "";
+          if (user.isBlockedByThem)
+            badges += '<span class="badge-blocked">بلاک</span>';
+          if (user.isBlockedByYou)
+            badges += '<span class="badge-blocked-you">شما بلاک کردید</span>';
+          var lastMsgContent = "",
+            onlineDot = "";
+          if (user.isBlockedByThem) {
+            lastMsgContent = "";
+            onlineDot = "";
+          } else if (user.isBlockedByYou) {
+            lastMsgContent = "پیام‌ها مخفی شده است";
+            onlineDot = "";
+          } else {
+            lastMsgContent = c.lastMessage?.content
+              ? escapeHtml(c.lastMessage.content)
+              : "شروع گفتگو";
+            onlineDot = user.isOnline
+              ? '<div class="tg-online-dot"></div>'
+              : "";
+          }
+          div.innerHTML =
+            '<div class="tg-avatar">' +
+            (user.username || "?").charAt(0).toUpperCase() +
+            onlineDot +
+            "</div>" +
+            '<div class="tg-conv-info">' +
+            '<div class="tg-conv-name">' +
+            (user.username || "ناشناس") +
+            badges +
+            "</div>" +
+            '<div class="tg-conv-last">' +
+            lastMsgContent +
+            "</div></div>" +
+            '<div class="tg-conv-meta">' +
+            (c.lastMessage?.createdAt &&
+            !user.isBlockedByThem &&
+            !user.isBlockedByYou
+              ? '<span class="tg-conv-time">' +
+                formatTime(c.lastMessage.createdAt) +
+                "</span>"
+              : "") +
+            (c.unreadCount > 0 && !user.isBlockedByThem && !user.isBlockedByYou
+              ? '<span class="tg-unread-badge">' + c.unreadCount + "</span>"
+              : "") +
+            "</div>";
+          container.appendChild(div);
+        });
+      }
+
+      async function openConversation(userId, username) {
+        if (currentConversation === userId) return;
+
+        const url = new URL(window.location);
+        url.searchParams.set("user", userId);
+        window.history.pushState({}, "", url);
+
+        if (currentConversation) stopTyping();
+        currentConversation = userId;
+        currentConversationUsername = username;
+        hideTypingIndicator();
+        hideTypingInHeader();
+        displayedDates = new Set();
+
+        document.getElementById("chatProfileLink").href = "/@" + username;
+        document.getElementById("chatProfileLinkText").href = "/@" + username;
+        document.getElementById("chatEmpty").style.display = "none";
+        document.getElementById("chatHeader").style.display = "flex";
+        document.getElementById("messagesContainer").style.display = "flex";
+        document.getElementById("messageInputArea").style.display = "flex";
+        document.getElementById("chatUsername").textContent =
+          username || "کاربر";
+        document.getElementById("avatarLetter").textContent = (username || "?")
+          .charAt(0)
+          .toUpperCase();
+
+        document.querySelectorAll(".tg-conv-item").forEach(function (i) {
+          i.classList.remove("active");
+          if (i.querySelector(".tg-conv-name")?.textContent.includes(username))
+            i.classList.add("active");
+        });
+
+        openChatMobile();
+        setTimeout(function () {
+          document.getElementById("messageText")?.focus();
+        }, 300);
+
+        handleBlockedStatus(false, false);
+
+        try {
+          var res = await fetch("/messages/" + userId + "?page=1&limit=50", {
+            credentials: "include",
+          });
+          var data = await res.json();
+          if (
+            !data.success &&
+            data.message &&
+            data.message.includes("بلاک شده")
+          ) {
+            handleBlockedStatus(true, false, data.message);
+            document.getElementById("messagesContainer").innerHTML =
+              '<div style="text-align:center;padding:32px;color:var(--danger-color);"><span class="material-symbols-rounded" style="font-size:40px;display:block;margin-bottom:12px;">block</span><p style="font-size:14px;">' +
+              data.message +
+              "</p></div>";
+          } else if (data.success) {
+            var recipient = data.recipient || data.data?.recipient || {};
+            handleBlockedStatus(
+              recipient.isBlockedByThem || false,
+              recipient.isBlockedByYou || false,
+            );
+            if (isBlockedByRecipient || isBlockedByYou)
+              document.getElementById("messagesContainer").innerHTML =
+                '<div style="text-align:center;padding:32px;color:var(--text-secondary);"><span class="material-symbols-rounded" style="font-size:40px;opacity:0.3;display:block;margin-bottom:12px;">chat_bubble_outline</span><p style="font-size:14px;">پیام‌ها مخفی شده است</p></div>';
+            else {
+              displayMessages(data.messages || data.data?.messages || []);
+              updateOnlineStatus(recipient.isOnline || false);
+            }
+          } else
+            document.getElementById("messagesContainer").innerHTML =
+              '<div style="text-align:center;color:var(--text-secondary);padding:20px;font-size:14px;">خطا در بارگذاری</div>';
+        } catch (err) {
+          document.getElementById("messagesContainer").innerHTML =
+            '<div style="text-align:center;color:var(--text-secondary);padding:20px;font-size:14px;">خطا در بارگذاری</div>';
+        }
+
+        if (!isBlockedByRecipient && !isBlockedByYou) {
+          try {
+            await fetch("/messages/" + userId + "/read", {
+              method: "POST",
+              credentials: "include",
+            });
+            if (ws && ws.connected) ws.emit("message:read", { userId: userId });
+            await updateUnreadCount();
+          } catch (e) {}
+        }
+        loadConversations();
+        await updateUnreadCount();
+      }
+
+      function displayMessages(messages) {
+        var container = document.getElementById("messagesContainer");
+        container.innerHTML = "";
+        displayedDates = new Set();
+        if (!messages.length) {
+          container.innerHTML =
+            '<div style="text-align:center;padding:32px;color:var(--text-secondary);"><span class="material-symbols-rounded" style="font-size:40px;opacity:0.3;display:block;margin-bottom:12px;">chat_bubble_outline</span><p style="font-size:14px;">هنوز پیامی نیست</p></div>';
+          createTypingIndicator();
+          return;
+        }
+        messages.forEach(function (msg) {
+          if (!msg.createdAt) return;
+          var dk = getDateKey(msg.createdAt);
+          if (!displayedDates.has(dk)) {
+            displayedDates.add(dk);
+            container.appendChild(createDivider(formatDate(msg.createdAt)));
+          }
+          var isSent = (msg.sender?._id || msg.sender) === currentUserId;
+          var del =
+            (isSent && msg.deletedForSender) ||
+            (!isSent && msg.deletedForRecipient) ||
+            msg.deleted;
+          var w = document.createElement("div");
+          w.className =
+            "tg-msg-wrap " +
+            (isSent ? "sent" : "received") +
+            (del ? " deleted" : "");
+          w.dataset.messageId = msg._id;
+          var ctx = del
+            ? ""
+            : '<span class="context-trigger" style="position:absolute;inset:0;cursor:context-menu;" oncontextmenu="showContextMenu(event,\'' +
+              msg._id +
+              "',false)\" ontouchstart=\"handleLongPress(event,'" +
+              msg._id +
+              "')\"></span>";
+          w.innerHTML =
+            '<div class="tg-msg-bubble" style="position:relative;">' +
+            ctx +
+            (del ? "این پیام حذف شده است" : escapeHtml(msg.content || "")) +
+            '<span class="tg-msg-time">' +
+            formatTime(msg.createdAt) +
+            "</span></div>";
+          container.appendChild(w);
+        });
+        createTypingIndicator();
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function createDivider(text) {
+        var d = document.createElement("div");
+        d.className = "tg-date-divider";
+        d.innerHTML = "<span>" + text + "</span>";
+        return d;
+      }
+
+      function appendMessageToChat(msg) {
+        var container = document.getElementById("messagesContainer");
+        var empty = container.querySelector('[style*="text-align:center"]');
+        if (empty) empty.remove();
+        var dk = getDateKey(msg.createdAt);
+        if (!displayedDates.has(dk) && msg.createdAt) {
+          displayedDates.add(dk);
+          container.appendChild(createDivider(formatDate(msg.createdAt)));
+        }
+        var isSent = (msg.sender?._id || msg.sender) === currentUserId;
+        var del =
+          (isSent && msg.deletedForSender) ||
+          (!isSent && msg.deletedForRecipient) ||
+          msg.deleted;
+        var w = document.createElement("div");
+        w.className =
+          "tg-msg-wrap " +
+          (isSent ? "sent" : "received") +
+          (del ? " deleted" : "");
+        w.dataset.messageId = msg._id;
+        var ctx = del
+          ? ""
+          : '<span class="context-trigger" style="position:absolute;inset:0;" oncontextmenu="showContextMenu(event,\'' +
+            msg._id +
+            "',false)\" ontouchstart=\"handleLongPress(event,'" +
+            msg._id +
+            "')\"></span>";
+        w.innerHTML =
+          '<div class="tg-msg-bubble" style="position:relative;">' +
+          ctx +
+          (del ? "این پیام حذف شده است" : escapeHtml(msg.content || "")) +
+          '<span class="tg-msg-time">' +
+          formatTime(msg.createdAt) +
+          "</span></div>";
+        container.appendChild(w);
+        var indicator = document.getElementById("typingIndicator");
+        if (indicator && indicator !== container.lastElementChild)
+          container.appendChild(indicator);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      var longPressTimer = null,
+        longPressTarget = null;
+
+      function handleLongPress(e, messageId) {
+        if (e.type === "touchstart") {
+          longPressTarget = messageId;
+          longPressTimer = setTimeout(function () {
+            if (longPressTarget) {
+              var w = document.querySelector(
+                '.tg-msg-wrap[data-message-id="' + longPressTarget + '"]',
+              );
+              if (w && !w.classList.contains("deleted")) {
+                var t = e.touches[0] || { clientX: 100, clientY: 100 };
+                showContextMenu(
+                  {
+                    clientX: t.clientX,
+                    clientY: t.clientY,
+                    preventDefault: function () {},
+                  },
+                  longPressTarget,
+                  false,
+                );
+              }
+            }
+          }, 500);
+        } else if (e.type === "touchend" || e.type === "touchmove") {
+          clearTimeout(longPressTimer);
+          longPressTarget = null;
+        }
+      }
+
+      document.addEventListener("touchstart", function (e) {
+        if (!e.target.closest(".tg-msg-bubble")) {
+          clearTimeout(longPressTimer);
+          hideContextMenu();
+        }
+      });
+
+      async function sendMessage() {
+        if (!currentConversation) return;
+        if (isBlockedByRecipient) {
+          showNotificationToast({
+            type: "error",
+            message: "شما توسط این کاربر بلاک شده‌اید",
+          });
+          return;
+        }
+        if (isBlockedByYou) {
+          showNotificationToast({
+            type: "error",
+            message: "شما این کاربر را بلاک کرده‌اید",
+          });
+          return;
+        }
+        var input = document.getElementById("messageText");
+        var content = input.value.trim();
+        if (!content) return;
+        var btn = document.getElementById("sendBtn");
+        if (btn) btn.disabled = true;
+        stopTyping();
+        hideTypingIndicator();
+        hideTypingInHeader();
+        try {
+          var res = await fetch("/messages/" + currentConversation, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ content }),
+          });
+          var data = await res.json();
+          if (data.success) {
+            input.value = "";
+            if (data.message || data.data)
+              appendMessageToChat(data.message || data.data);
+            loadConversations();
+          } else {
+            if (data.message && data.message.includes("بلاک شده"))
+              handleBlockedStatus(true, false, data.message);
+            if (data.message && data.message.includes("بلاک کرده‌اید"))
+              handleBlockedStatus(false, true);
+            showNotificationToast({
+              type: "error",
+              message: data.message || "خطا",
+            });
+          }
+        } catch (err) {
+          showNotificationToast({ type: "error", message: "خطا در ارسال" });
+        } finally {
+          if (btn) btn.disabled = false;
+          if (!isBlockedByRecipient && !isBlockedByYou) input.focus();
+        }
+      }
+
+      function showNotificationToast(notification) {
+        var container = document.getElementById("toastContainer");
+        var toast = document.createElement("div");
+        toast.className =
+          "tg-toast" +
+          (notification.type === "error"
+            ? " error"
+            : notification.type === "success"
+              ? " success"
+              : "");
+        toast.textContent = notification.message || "اعلان";
+        container.appendChild(toast);
+        setTimeout(function () {
+          toast.style.opacity = "0";
+          toast.style.transform = "translateY(-10px) scale(0.95)";
+          toast.style.transition = "all 0.2s";
+          setTimeout(function () {
+            toast.remove();
+          }, 300);
+        }, 3000);
+      }
+
+      window.addEventListener("resize", function () {
+        var was = isMobile;
+        isMobile = window.innerWidth <= 768;
+        if (was && !isMobile) {
+          document.getElementById("sidebar").classList.remove("chat-open");
+          document.getElementById("chatArea").classList.remove("chat-open");
+        }
+      });
+
+      (function initChatFromUrl() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get("user");
+        if (userId) {
+          fetch("/users/" + userId + "/info", { credentials: "include" })
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.success && d.data.user) {
+                openConversation(d.data.user._id, d.data.user.username);
+              }
+            })
+            .catch(() => {});
+        }
+      })();
+
+      loadConversations();
+      updateUnreadCount();
+
+      if (preselectedUser) {
+        fetch("/users/" + preselectedUser + "/info", { credentials: "include" })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success && d.data.user)
+              openConversation(d.data.user._id, d.data.user.username);
+          })
+          .catch(() => {});
+      }
+
+      setInterval(loadConversations, 30000);
+      setInterval(updateUnreadCount, 15000);
+    </script>
+  </body>
+</html>
