@@ -19,16 +19,14 @@ const sendNotification = async (
   data = {},
 ) => {
   if (!recipientId || !senderId || !type) {
-    fastify.log.warn("Invalid notification parameters", {
-      recipientId,
-      senderId,
-      type,
-    });
+    fastify.log.warn(
+      { recipientId, senderId, type },
+      "Invalid notification parameters",
+    );
     return null;
   }
 
   if (recipientId.toString() === senderId.toString()) {
-    fastify.log.debug("Skipping self-notification", { type });
     return null;
   }
 
@@ -43,26 +41,20 @@ const sendNotification = async (
     });
 
     const populatedNotification = await Notification.findById(notification._id)
-      .populate("sender", "username avatar")
+      .populate("sender", "username displayName")
       .lean();
 
     if (fastify.io) {
       const room = `user:${recipientId}:notifications`;
       fastify.io.to(room).emit("notification:new", populatedNotification);
-      fastify.log.debug("Notification emitted", {
-        room,
-        notificationId: notification._id,
-      });
     }
 
     return populatedNotification;
   } catch (error) {
-    fastify.log.error("Failed to create notification", {
-      error: error.message,
-      recipientId,
-      senderId,
-      type,
-    });
+    fastify.log.error(
+      { err: error, recipientId, senderId, type },
+      "Failed to create notification",
+    );
     return null;
   }
 };
