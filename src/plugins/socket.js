@@ -1,408 +1,315 @@
 const fp = require("fastify-plugin");
+const User = require("../models/User");
+const Notification = require("../models/Notification");
+const messages = require("../services/messageService");
+const { likePost, likeComment } = require("../services/reactionService");
+const { isObjectId } = require("../utils/ids");
 
-module.exports = fp(async (fastify, opts) => {
+const MAX_PRESENCE_WATCHES = 200;
+const MAX_POST_ROOMS = 50;
+const TYPING_TIMEOUT_MS = 5000;
+const CAN_MESSAGE_TTL_MS = 30000;
+
+const asObject = (data) =>
+  data && typeof data === "object" && !Array.isArray(data) ? data : {};
+
+const parseCookies = (header = "") =>
+  Object.fromEntries(
+    header
+      .split(";")
+      .map((part) => part.trim().split(/=(.*)/s).slice(0, 2))
+      .filter(([name]) => name),
+  );
+
+module.exports = fp(async (fastify) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
+    : null;
+
   await fastify.register(require("fastify-socket.io"), {
-    cors: {
-      origin: process.env.CORS_ORIGIN
-        ? process.env.CORS_ORIGIN.split(",")
-        : "*",
-      methods: ["GET", "POST"],
-      credentials: true,
+    cors: allowedOrigins
+      ? { origin: allowedOrigins, methods: ["GET", "POST"], credentials: true }
+      : undefined,
+    // Cross-site pages must not be able to open an authenticated socket with
+    // the visitor's cookies.
+    allowRequest: (req, callback) => {
+      const origin = req.headers.origin;
+      if (!origin || !isProduction) return callback(null, true);
+
+      let host = null;
+      try {
+        host = new URL(origin).host;
+      } catch {}
+      callback(
+        null,
+        host === req.headers.host || !!allowedOrigins?.includes(origin),
+      );
     },
     transports: ["websocket", "polling"],
     pingTimeout: 60000,
     pingInterval: 25000,
     connectTimeout: 45000,
-    allowEIO3: true,
-    maxHttpBufferSize: 1e6,
+    maxHttpBufferSize: 1e5,
   });
 
+  const io = () => fastify.io;
+  const roomSize = (room) => io().sockets.adapter.rooms.get(room)?.size || 0;
+  const isUserOnline = (userId) => roomSize(`user:${userId}`) > 0;
+  fastify.decorate("isUserOnline", isUserOnline);
+
+  const resolveUser = async (socket) => {
+    const cookies = parseCookies(socket.handshake.headers?.cookie);
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.headers?.authorization?.replace(/^Bearer /, "") ||
+      cookies.accessToken;
+
+    const decoded = await fastify.verifyAccessToken(token);
+    if (decoded && !decoded.expired) {
+      const user = await User.findById(decoded.userId).select(
+        "username tokenVersion",
+      );
+      const stale = user && (decoded.v || 0) !== (user.tokenVersion || 0);
+      return user && !stale ? user : null;
+    }
+
+    // An expired access token is fine as long as the session behind the
+    // refresh cookie is still active.
+    const refreshed = await fastify.verifyRefreshToken(cookies.refreshToken);
+    if (refreshed && !refreshed.expired) {
+      return User.findById(refreshed.userId).select("username");
+    }
+    return null;
+  };
+
   fastify.addHook("onReady", () => {
-    const onlineUsers = new Map();
-    const userSockets = new Map();
-    const typingTimeouts = new Map();
+    const typingTimers = new Map();
 
-    fastify.io.use(async (socket, next) => {
+    io().use(async (socket, next) => {
       try {
-        const token = extractToken(socket);
-        if (!token) return guest(next);
-
-        const decoded = await fastify.verifyAccessToken(token);
-        if (!decoded) return guest(next);
-
-        const User = require("../models/User");
-        const user = await User.findById(decoded.userId).select("username");
-        if (!user) return guest(next);
-
-        socket.userId = decoded.userId;
-        socket.username = user.username;
-        socket.isAuthenticated = true;
-        next();
+        const user = await resolveUser(socket);
+        if (user) {
+          socket.userId = user._id.toString();
+          socket.username = user.username;
+          socket.isAuthenticated = true;
+        }
       } catch (error) {
-        fastify.log.error({ error }, "Socket auth error");
-        guest(next);
+        fastify.log.error({ err: error }, "Socket auth error");
       }
-    });
-
-    fastify.io.on("connection", async (socket) => {
-      const { userId, isAuthenticated: isAuth, username } = socket;
-      console.log(
-        `Socket connected: ${socket.id} | User: ${userId || "anonymous"}`,
-      );
-
-      if (isAuth && userId) await handleAuthenticated(socket);
-
-      socket.on("message:send", (data) => handleMessageSend(socket, data));
-      socket.on("message:read", (data) => handleMessageRead(socket, data));
-      socket.on("typing:start", (data) => handleTypingStart(socket, data));
-      socket.on("typing:stop", (data) => handleTypingStop(socket, data));
-      socket.on("user:active", () => handleUserActive(socket));
-      socket.on("post:like", (data) => handlePostLike(socket, data));
-      socket.on("comment:like", (data) => handleCommentLike(socket, data));
-      socket.on("post:join", (data) => {
-        if (data.postId) socket.join(`post:${data.postId}`);
-      });
-      socket.on("post:leave", (data) => {
-        if (data.postId) socket.leave(`post:${data.postId}`);
-      });
-      socket.on("notification:read", () => handleNotificationRead(socket));
-      socket.on("disconnect", () => handleDisconnect(socket));
-      socket.on("error", (error) =>
-        fastify.log.error({ error, socketId: socket.id }, "Socket error"),
-      );
-    });
-
-    const guest = (next) => {
       next();
-    };
+    });
 
-    const extractToken = (socket) => {
-      let token =
-        socket.handshake.auth?.token ||
-        socket.handshake.query?.token ||
-        socket.handshake.headers?.authorization?.replace("Bearer ", "");
+    io().on("connection", (socket) => {
+      socket.data.buckets = new Map();
+      socket.data.postRooms = new Set();
+      socket.data.watched = new Set();
+      socket.data.canMessage = new Map();
 
-      if (!token && socket.handshake.headers?.cookie) {
-        const match =
-          socket.handshake.headers.cookie.match(/accessToken=([^;]+)/);
-        if (match) token = match[1];
-      }
-      return token;
-    };
+      // Fixed window limiter so one socket cannot flood the server.
+      const allow = (key, max, windowMs) => {
+        const now = Date.now();
+        const bucket = socket.data.buckets.get(key);
+        if (!bucket || now > bucket.resetAt) {
+          socket.data.buckets.set(key, { count: 1, resetAt: now + windowMs });
+          return true;
+        }
+        bucket.count += 1;
+        return bucket.count <= max;
+      };
 
-    const emitToUser = (userId, event, data) =>
-      fastify.io.to(`user:${userId}`).emit(event, data);
-
-    async function handleAuthenticated(socket) {
-      const uid = socket.userId.toString();
-      if (!userSockets.has(uid)) userSockets.set(uid, []);
-      userSockets.get(uid).push(socket.id);
-      onlineUsers.set(uid, socket.id);
-
-      try {
-        await fastify.redis.hset("online_users", uid, Date.now().toString());
-        await fastify.redis.expire("online_users", 86400);
-      } catch (e) {
-        fastify.log.error({ error: e }, "Redis error");
-      }
-
-      socket.join(`user:${uid}`);
-      socket.join(`user:${uid}:notifications`);
-      fastify.io.emit("user:online", {
-        userId: uid,
-        username: socket.username,
-        onlineUsers: Array.from(onlineUsers.keys()),
-      });
-
-      try {
-        const Message = require("../models/Message");
-        const unreadCount = await Message.countDocuments({
-          recipient: socket.userId,
-          isRead: false,
-        });
-        socket.emit("messages:unread_count", { count: unreadCount });
-      } catch (e) {
-        fastify.log.error({ error: e }, "Unread count error");
-      }
-    }
-
-    async function handleMessageSend(socket, data) {
-      if (!socket.isAuthenticated)
-        return socket.emit("message:error", { message: "احراز هویت لازم است" });
-      const { recipientId, content, type = "text" } = data;
-      if (!recipientId || !content)
-        return socket.emit("message:error", { message: "فرمت نامعتبر" });
-      if (content.length > 1000)
-        return socket.emit("message:error", { message: "حداکثر 1000 کاراکتر" });
-
-      try {
-        const User = require("../models/User"),
-          Message = require("../models/Message");
-        const recipient = await User.findById(recipientId).select(
-          "blockedUsers username",
-        );
-        if (!recipient)
-          return socket.emit("message:error", { message: "کاربر یافت نشد" });
-        if (recipient.blockedUsers?.includes(socket.userId))
-          return socket.emit("message:error", { message: "شما بلاک شده‌اید" });
-
-        const message = await Message.create({
-          sender: socket.userId,
-          recipient: recipientId,
-          content,
-          type,
-          isRead: false,
-        });
-        const populated = await Message.findById(message._id)
-          .populate("sender", "username")
-          .populate("recipient", "username");
-
-        const recipientSockets = userSockets.get(recipientId.toString()) || [];
-        recipientSockets.forEach((sid) =>
-          fastify.io.to(sid).emit("message:new", populated),
-        );
-        fastify.io
-          .to(`user:${recipientId}:notifications`)
-          .emit("notification:new", {
-            type: "message",
-            from: socket.userId,
-            message: populated,
-          });
-        socket.emit("message:sent", populated);
-
-        const unreadCount = await Message.countDocuments({
-          recipient: recipientId,
-          isRead: false,
-        });
-        emitToUser(recipientId, "messages:unread_count", {
-          count: unreadCount,
-        });
-      } catch (error) {
-        fastify.log.error({ error }, "Message send error");
-        socket.emit("message:error", { message: "خطا در ارسال" });
-      }
-    }
-
-    async function handleMessageRead(socket, data) {
-      if (!socket.isAuthenticated) return;
-      const { messageId, userId: senderId } = data;
-      const Message = require("../models/Message");
-
-      try {
-        if (messageId) {
-          const msg = await Message.findOne({
-            _id: messageId,
-            recipient: socket.userId,
-          });
-          if (msg && !msg.isRead) {
-            msg.isRead = true;
-            msg.readAt = new Date();
-            await msg.save();
-            if (msg.sender)
-              emitToUser(msg.sender, "message:read", {
-                messageId,
-                recipientId: socket.userId,
-              });
+      // Every handler runs inside this wrapper: a malformed payload or a
+      // failing query is logged and answered, and can never crash the process.
+      const on = (event, { auth = true, limit } = {}, handler) => {
+        socket.on(event, async (payload, ack) => {
+          const reply = typeof ack === "function" ? ack : () => {};
+          try {
+            if (auth && !socket.isAuthenticated) {
+              return reply({ success: false, message: "احراز هویت لازم است" });
+            }
+            if (limit && !allow(event, limit[0], limit[1])) {
+              return reply({ success: false, message: "تعداد درخواست‌ها زیاد است" });
+            }
+            await handler(asObject(payload), reply);
+          } catch (error) {
+            if (error.statusCode && error.statusCode < 500) {
+              reply({ success: false, message: error.message });
+              socket.emit("message:error", { message: error.message });
+              return;
+            }
+            fastify.log.error({ err: error, event }, "Socket handler error");
+            reply({ success: false, message: "خطای سرور" });
           }
-        } else if (senderId) {
-          await Message.updateMany(
-            { sender: senderId, recipient: socket.userId, isRead: false },
-            { $set: { isRead: true, readAt: new Date() } },
-          );
-          emitToUser(senderId, "messages:read", { userId: socket.userId });
-        }
-
-        const unreadCount = await Message.countDocuments({
-          recipient: socket.userId,
-          isRead: false,
         });
-        socket.emit("messages:unread_count", { count: unreadCount });
-        if (senderId) {
-          const senderUnread = await Message.countDocuments({
-            recipient: senderId,
-            isRead: false,
-          });
-          emitToUser(senderId, "messages:unread_count", {
-            count: senderUnread,
-          });
-        }
-      } catch (error) {
-        fastify.log.error({ error }, "Message read error");
-      }
-    }
+      };
 
-    function handleTypingStart(socket, data) {
-      if (!socket.isAuthenticated || !data.recipientId) return;
-      emitToUser(data.recipientId, "typing:start", {
-        userId: socket.userId,
-        username: socket.username || "کاربر",
-      });
-      const key = `${socket.userId}:${data.recipientId}`;
-      if (typingTimeouts.has(key)) clearTimeout(typingTimeouts.get(key));
-      typingTimeouts.set(
-        key,
-        setTimeout(() => {
-          emitToUser(data.recipientId, "typing:stop", {
+      const stopTyping = (recipientId) => {
+        const key = `${socket.userId}:${recipientId}`;
+        clearTimeout(typingTimers.get(key));
+        typingTimers.delete(key);
+        messages.emitToUser(fastify, recipientId, "typing:stop", {
+          userId: socket.userId,
+        });
+      };
+
+      const canMessage = async (recipientId) => {
+        const cached = socket.data.canMessage.get(recipientId);
+        if (cached && cached.expiresAt > Date.now()) return cached.ok;
+
+        let ok = true;
+        try {
+          await messages.assertCanMessage(socket.userId, recipientId);
+        } catch {
+          ok = false;
+        }
+        socket.data.canMessage.set(recipientId, {
+          ok,
+          expiresAt: Date.now() + CAN_MESSAGE_TTL_MS,
+        });
+        return ok;
+      };
+
+      if (socket.isAuthenticated) {
+        const wasOffline = !isUserOnline(socket.userId);
+        socket.join(`user:${socket.userId}`);
+        socket.join(`user:${socket.userId}:notifications`);
+
+        if (wasOffline) {
+          io().to(`presence:${socket.userId}`).emit("user:online", {
             userId: socket.userId,
+            username: socket.username,
           });
-          typingTimeouts.delete(key);
-        }, 5000),
-      );
-    }
-
-    function handleTypingStop(socket, data) {
-      if (!socket.isAuthenticated || !data.recipientId) return;
-      emitToUser(data.recipientId, "typing:stop", { userId: socket.userId });
-      const key = `${socket.userId}:${data.recipientId}`;
-      if (typingTimeouts.has(key)) {
-        clearTimeout(typingTimeouts.get(key));
-        typingTimeouts.delete(key);
-      }
-    }
-
-    function handleUserActive(socket) {
-      if (!socket.isAuthenticated) return;
-      try {
-        fastify.redis.hset(
-          "online_users",
-          socket.userId.toString(),
-          Date.now().toString(),
+        }
+        messages.pushUnreadCount(fastify, socket.userId).catch((error) =>
+          fastify.log.error({ err: error }, "Unread count error"),
         );
-      } catch (e) {}
-    }
-
-    async function handlePostLike(socket, data) {
-      if (!socket.isAuthenticated) return;
-      try {
-        const Post = require("../models/Post");
-        const post = await Post.findById(data.postId);
-        if (!post) return;
-        const uid = socket.userId.toString();
-        const likeIndex = post.likes.indexOf(uid);
-        if (likeIndex === -1) post.likes.push(uid);
-        else post.likes.splice(likeIndex, 1);
-        await post.save();
-        const liked = likeIndex === -1;
-        fastify.io.emit("post:liked", {
-          postId: data.postId,
-          likesCount: post.likes.length,
-          userId: uid,
-          liked,
-        });
-        if (liked && post.author.toString() !== uid)
-          await createNotification(post.author, socket.userId, "like", {
-            postId: data.postId,
-            message: "پست شما را لایک کرد",
-          });
-      } catch (error) {
-        fastify.log.error({ error }, "Post like error");
       }
-    }
 
-    async function handleCommentLike(socket, data) {
-      if (!socket.isAuthenticated) return;
-      try {
-        const Comment = require("../models/Comment");
-        const comment = await Comment.findById(data.commentId);
-        if (!comment) return;
-        const uid = socket.userId.toString();
-        const likeIndex = comment.likes.indexOf(uid);
-        if (likeIndex === -1) comment.likes.push(uid);
-        else comment.likes.splice(likeIndex, 1);
-        comment.likesCount = comment.likes.length;
-        await comment.save();
-        const liked = likeIndex === -1;
-        fastify.io.emit("comment:liked", {
-          commentId: data.commentId,
-          likesCount: comment.likesCount,
-          userId: uid,
-          liked,
+      on("message:send", { limit: [60, 60000] }, async (data, reply) => {
+        if (!isObjectId(data.recipientId)) {
+          return reply({ success: false, message: "فرمت نامعتبر" });
+        }
+        const message = await messages.sendMessage(fastify, {
+          senderId: socket.userId,
+          recipientId: data.recipientId,
+          content: data.content,
+          replyTo: data.replyTo || null,
         });
-        if (liked && comment.author.toString() !== uid)
-          await createNotification(
-            comment.author,
-            socket.userId,
-            "like_comment",
-            {
-              commentId: data.commentId,
-              postId: comment.post,
-              message: "کامنت شما را لایک کرد",
-            },
-          );
-      } catch (error) {
-        fastify.log.error({ error }, "Comment like error");
-      }
-    }
-
-    async function createNotification(recipientId, senderId, type, data) {
-      const Notification = require("../models/Notification");
-      const notification = await Notification.create({
-        recipient: recipientId,
-        sender: senderId,
-        type,
-        ...data,
+        reply({ success: true, message });
       });
-      fastify.io
-        .to(`user:${recipientId}:notifications`)
-        .emit("notification:new", {
-          _id: notification._id,
-          type,
-          message: notification.message,
-          sender: senderId,
-          ...data,
-          createdAt: notification.createdAt,
-        });
-    }
 
-    async function handleNotificationRead(socket) {
-      if (!socket.isAuthenticated) return;
-      try {
-        const Notification = require("../models/Notification");
+      on("message:read", { limit: [120, 60000] }, async (data, reply) => {
+        if (isObjectId(data.messageId)) {
+          await messages.markMessageRead(fastify, socket.userId, data.messageId);
+        } else if (isObjectId(data.userId)) {
+          await messages.markConversationRead(fastify, socket.userId, data.userId);
+        }
+        reply({ success: true });
+      });
+
+      on("typing:start", { limit: [60, 60000] }, async (data) => {
+        const recipientId = data.recipientId;
+        if (!isObjectId(recipientId) || !(await canMessage(recipientId))) return;
+
+        messages.emitToUser(fastify, recipientId, "typing:start", {
+          userId: socket.userId,
+          username: socket.username,
+        });
+        const key = `${socket.userId}:${recipientId}`;
+        clearTimeout(typingTimers.get(key));
+        typingTimers.set(
+          key,
+          setTimeout(() => stopTyping(recipientId), TYPING_TIMEOUT_MS),
+        );
+      });
+
+      on("typing:stop", { limit: [60, 60000] }, async (data) => {
+        if (isObjectId(data.recipientId)) stopTyping(data.recipientId);
+      });
+
+      on("presence:watch", { limit: [30, 60000] }, async (data, reply) => {
+        const ids = (Array.isArray(data.userIds) ? data.userIds : [])
+          .filter(isObjectId)
+          .slice(0, MAX_PRESENCE_WATCHES);
+
+        for (const id of ids) {
+          if (socket.data.watched.size >= MAX_PRESENCE_WATCHES) break;
+          socket.data.watched.add(id);
+          socket.join(`presence:${id}`);
+        }
+        reply({ success: true, online: ids.filter(isUserOnline) });
+      });
+
+      on("presence:unwatch", {}, async (data) => {
+        for (const id of (Array.isArray(data.userIds) ? data.userIds : []).filter(isObjectId)) {
+          socket.data.watched.delete(id);
+          socket.leave(`presence:${id}`);
+        }
+      });
+
+      on("user:active", { auth: false }, async () => {});
+
+      on("post:like", { limit: [30, 60000] }, async (data) => {
+        if (isObjectId(data.postId)) await likePost(fastify, socket.userId, data.postId);
+      });
+
+      on("comment:like", { limit: [30, 60000] }, async (data) => {
+        if (isObjectId(data.commentId)) {
+          await likeComment(fastify, socket.userId, data.commentId);
+        }
+      });
+
+      on("post:join", { auth: false, limit: [60, 60000] }, async (data) => {
+        if (!isObjectId(data.postId)) return;
+        if (socket.data.postRooms.size >= MAX_POST_ROOMS) return;
+        socket.data.postRooms.add(data.postId);
+        socket.join(`post:${data.postId}`);
+      });
+
+      on("post:leave", { auth: false }, async (data) => {
+        if (!isObjectId(data.postId)) return;
+        socket.data.postRooms.delete(data.postId);
+        socket.leave(`post:${data.postId}`);
+      });
+
+      on("notification:read", { limit: [20, 60000] }, async () => {
         await Notification.updateMany(
           { recipient: socket.userId, isRead: false },
           { isRead: true, readAt: new Date() },
         );
         socket.emit("notification:read_all", { success: true });
-      } catch (e) {
-        fastify.log.error({ error: e }, "Notification read error");
-      }
-    }
+      });
 
-    async function handleDisconnect(socket) {
-      if (!socket.isAuthenticated) return;
-      const uid = socket.userId.toString();
+      socket.on("error", (error) =>
+        fastify.log.error({ err: error, socketId: socket.id }, "Socket error"),
+      );
 
-      for (const [key, timeout] of typingTimeouts.entries()) {
-        if (key.startsWith(`${uid}:`)) {
-          clearTimeout(timeout);
-          emitToUser(key.split(":")[1], "typing:stop", { userId: uid });
-          typingTimeouts.delete(key);
+      socket.on("disconnect", () => {
+        if (!socket.isAuthenticated) return;
+
+        for (const [key, timer] of typingTimers) {
+          if (key.startsWith(`${socket.userId}:`)) {
+            clearTimeout(timer);
+            typingTimers.delete(key);
+            messages.emitToUser(fastify, key.split(":")[1], "typing:stop", {
+              userId: socket.userId,
+            });
+          }
         }
-      }
 
-      const sockets = userSockets.get(uid) || [];
-      const index = sockets.indexOf(socket.id);
-      if (index > -1) sockets.splice(index, 1);
-
-      if (sockets.length === 0) {
-        userSockets.delete(uid);
-        onlineUsers.delete(uid);
-        try {
-          await fastify.redis.hdel("online_users", uid);
-        } catch (e) {}
-        fastify.io.emit("user:offline", {
-          userId: uid,
-          username: socket.username,
-          onlineUsers: Array.from(onlineUsers.keys()),
-        });
-      }
-    }
+        if (!isUserOnline(socket.userId)) {
+          io().to(`presence:${socket.userId}`).emit("user:offline", {
+            userId: socket.userId,
+            username: socket.username,
+          });
+        }
+      });
+    });
   });
 
   fastify.addHook("onClose", async () => {
     try {
       await fastify.io.close();
-      fastify.log.info("Socket.IO closed");
     } catch (error) {
       fastify.log.error({ err: error }, "Error closing Socket.IO");
     }
