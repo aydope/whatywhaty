@@ -1,372 +1,301 @@
 const Post = require("../models/Post");
 const Comment = require("../models/Comment");
-const { sendNotification } = require("../services/notificationService");
 const { createPostSchema } = require("../validators/post");
+const { isObjectId, sameId } = require("../utils/ids");
+const { PUBLIC_USER_FIELDS } = require("../utils/publicUser");
+const { withViewerLikes, withCommentLikes } = require("../services/likeService");
+const {
+  likePost,
+  bumpExploreCache,
+  EXPLORE_VERSION_KEY,
+} = require("../services/reactionService");
 
-const formatPosts = (posts) =>
-  posts.map((p) => ({
-    ...p,
-    likesCount: p.likes?.length || 0,
-    commentsCount: p.comments?.length || 0,
+const PAGE_SIZE = 10;
+const EXPLORE_CANDIDATES = 500;
+const EXPLORE_CACHE_SECONDS = 300;
+
+const formatPosts = (posts, viewerId) =>
+  posts.map((post) => ({
+    ...withViewerLikes(post, viewerId),
+    commentsCount: post.comments?.length || 0,
   }));
 
-const getCommentsForPost = async (postId) =>
-  Comment.find({ post: postId, parentComment: null })
+const getCommentsForPost = async (postId, viewerId) => {
+  const comments = await Comment.find({ post: postId, parentComment: null })
     .sort({ createdAt: -1 })
-    .populate("author", "username")
+    .limit(100)
+    .populate("author", PUBLIC_USER_FIELDS)
     .lean();
+  return comments.map((comment) => withCommentLikes(comment, viewerId));
+};
 
-module.exports = async function (fastify, opts) {
+const pageFrom = (query) => Math.max(1, parseInt(query.page, 10) || 1);
+
+module.exports = async function (fastify) {
   const auth = { preHandler: [fastify.authenticate] };
   const optionalAuth = { preHandler: [fastify.authenticateSilent] };
+
+  const invalidId = (reply) =>
+    reply.status(400).send({ success: false, message: "شناسه نامعتبر" });
 
   fastify.post("/", auth, async (req, reply) => {
     try {
       const { error, value } = createPostSchema.validate(req.body);
 
       if (error) {
-        return reply.status(400).send({
-          success: false,
-          message: error.details[0].message,
-        });
+        return reply
+          .status(400)
+          .send({ success: false, message: error.details[0].message });
       }
 
       const post = await Post.create({
         author: req.user._id,
         content: value.content,
       });
-
-      const populated = await Post.findById(post._id).populate(
-        "author",
-        "username",
-      );
+      const populated = await Post.findById(post._id).populate("author", PUBLIC_USER_FIELDS);
 
       fastify.io.emit("post:new", populated);
+      await bumpExploreCache(fastify);
 
-      return {
-        success: true,
-        post: populated,
-      };
+      return { success: true, post: populated };
     } catch (error) {
-      fastify.log.error({ error }, "Create post error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در ایجاد پست",
-      });
+      req.log.error({ err: error }, "Create post error");
+      return reply.status(500).send({ success: false, message: "خطا در ایجاد پست" });
     }
   });
 
   fastify.get("/feed", auth, async (req, reply) => {
     try {
-      const page = Math.max(1, parseInt(req.query.page) || 1);
-      const limit = 10;
-      const skip = (page - 1) * limit;
+      const page = pageFrom(req.query);
       const followingIds = [...req.user.following, req.user._id];
 
       const posts = await Post.find({ author: { $in: followingIds } })
         .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .populate("author", "username")
+        .skip((page - 1) * PAGE_SIZE)
+        .limit(PAGE_SIZE)
+        .populate("author", PUBLIC_USER_FIELDS)
         .lean();
 
       return {
         success: true,
-        posts: formatPosts(posts),
+        posts: formatPosts(posts, req.user._id),
         page,
-        hasMore: posts.length === limit,
+        hasMore: posts.length === PAGE_SIZE,
       };
     } catch (error) {
-      fastify.log.error({ error }, "Get feed error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در دریافت فید",
-      });
+      req.log.error({ err: error }, "Get feed error");
+      return reply.status(500).send({ success: false, message: "خطا در دریافت فید" });
     }
   });
 
   fastify.get("/user/:userId", auth, async (req, reply) => {
     try {
+      if (!isObjectId(req.params.userId)) return invalidId(reply);
+      const page = pageFrom(req.query);
+
       const posts = await Post.find({ author: req.params.userId })
         .sort({ createdAt: -1 })
-        .populate("author", "username")
+        .skip((page - 1) * 20)
+        .limit(20)
+        .populate("author", PUBLIC_USER_FIELDS)
         .lean();
 
       return {
         success: true,
-        posts: formatPosts(posts),
+        posts: formatPosts(posts, req.user._id),
+        page,
+        hasMore: posts.length === 20,
       };
     } catch (error) {
-      if (error.name === "CastError") {
-        return reply.status(400).send({
-          success: false,
-          message: "شناسه نامعتبر",
-        });
-      }
-
-      fastify.log.error({ error }, "Get user posts error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در دریافت پست‌ها",
-      });
+      req.log.error({ err: error }, "Get user posts error");
+      return reply.status(500).send({ success: false, message: "خطا در دریافت پست‌ها" });
     }
   });
 
   fastify.get("/explore", auth, async (req, reply) => {
     try {
-      const page = Math.max(1, parseInt(req.query.page) || 1);
-      const limit = 10;
-      const cacheKey = `explore:${page}`;
+      const page = pageFrom(req.query);
+      const viewerId = req.user._id;
+      const redisReady = fastify.redis.status === "ready";
 
-      const cached = await fastify.redis.get(cacheKey);
+      let cacheKey = null;
+      let result = null;
 
-      if (cached) {
-        return JSON.parse(cached);
+      if (redisReady) {
+        try {
+          const version = (await fastify.redis.get(EXPLORE_VERSION_KEY)) || "0";
+          cacheKey = `explore:${version}:${page}`;
+          const cached = await fastify.redis.get(cacheKey);
+          if (cached) result = JSON.parse(cached);
+        } catch (error) {
+          req.log.warn({ err: error }, "Explore cache read failed");
+        }
       }
 
-      const posts = await Post.aggregate([
-        {
-          $addFields: {
-            likesCount: { $size: { $ifNull: ["$likes", []] } },
-            commentsCount: { $size: { $ifNull: ["$comments", []] } },
-          },
-        },
-        {
-          $addFields: {
-            score: {
-              $add: [
-                { $multiply: ["$likesCount", 2] },
-                { $multiply: ["$commentsCount", 1.5] },
-                {
-                  $divide: [
-                    1,
-                    { $add: [{ $subtract: [new Date(), "$createdAt"] }, 1] },
-                  ],
-                },
-              ],
+      if (!result) {
+        // Only the most recent posts are ranked, so the cost of one page does
+        // not grow with the size of the collection.
+        const posts = await Post.aggregate([
+          { $sort: { createdAt: -1 } },
+          { $limit: EXPLORE_CANDIDATES },
+          {
+            $addFields: {
+              likesCount: { $size: { $ifNull: ["$likes", []] } },
+              commentsCount: { $size: { $ifNull: ["$comments", []] } },
             },
           },
-        },
-        { $sort: { score: -1 } },
-        { $skip: (page - 1) * limit },
-        { $limit: limit },
-        {
-          $lookup: {
-            from: "users",
-            localField: "author",
-            foreignField: "_id",
-            pipeline: [{ $project: { username: 1 } }],
-            as: "author",
+          {
+            $addFields: {
+              score: {
+                $add: [
+                  { $multiply: ["$likesCount", 2] },
+                  { $multiply: ["$commentsCount", 1.5] },
+                ],
+              },
+            },
           },
-        },
-        { $unwind: "$author" },
-        {
-          $project: {
-            content: 1,
-            likes: 1,
-            comments: 1,
-            createdAt: 1,
-            likesCount: 1,
-            commentsCount: 1,
-            "author.username": 1,
-            "author._id": 1,
+          { $sort: { score: -1, createdAt: -1 } },
+          { $skip: (page - 1) * PAGE_SIZE },
+          { $limit: PAGE_SIZE },
+          {
+            $lookup: {
+              from: "users",
+              localField: "author",
+              foreignField: "_id",
+              pipeline: [{ $project: { username: 1, displayName: 1 } }],
+              as: "author",
+            },
           },
-        },
-      ]);
+          { $unwind: "$author" },
+          {
+            $project: {
+              content: 1,
+              createdAt: 1,
+              likesCount: 1,
+              commentsCount: 1,
+              "author._id": 1,
+              "author.username": 1,
+              "author.displayName": 1,
+            },
+          },
+        ]);
 
-      const result = {
+        result = { posts, page, hasMore: posts.length === PAGE_SIZE };
+
+        if (cacheKey) {
+          fastify.redis
+            .setex(cacheKey, EXPLORE_CACHE_SECONDS, JSON.stringify(result))
+            .catch((error) =>
+              req.log.warn({ err: error }, "Explore cache write failed"),
+            );
+        }
+      }
+
+      // The cached page is shared by everyone; whether the viewer liked each
+      // post is looked up separately.
+      const liked = await Post.find({
+        _id: { $in: result.posts.map((p) => p._id) },
+        likes: viewerId,
+      })
+        .select("_id")
+        .lean();
+      const likedIds = new Set(liked.map((p) => p._id.toString()));
+
+      return {
         success: true,
-        posts,
-        page,
-        hasMore: posts.length === limit,
+        ...result,
+        posts: result.posts.map((post) => ({
+          ...post,
+          likes: likedIds.has(post._id.toString()) ? [viewerId] : [],
+        })),
       };
-
-      await fastify.redis.setex(cacheKey, 300, JSON.stringify(result));
-
-      return result;
     } catch (error) {
-      fastify.log.error({ error }, "Explore error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در دریافت پست‌ها",
-      });
+      req.log.error({ err: error }, "Explore error");
+      return reply.status(500).send({ success: false, message: "خطا در دریافت پست‌ها" });
     }
   });
 
   fastify.get("/:id", optionalAuth, async (req, reply) => {
-    try {
-      const post = await Post.findById(req.params.id)
-        .populate("author", "username")
-        .lean();
-
-      if (!post) {
-        return reply.status(404).view("404.ejs", {
-          title: "پست یافت نشد",
-          user: req.user,
-        });
-      }
-
-      if ((req.headers.accept || "").includes("application/json")) {
-        return {
-          success: true,
-          post: formatPosts([post])[0],
-        };
-      }
-
-      const comments = await getCommentsForPost(req.params.id);
-      const totalComments = await Comment.countDocuments({
-        post: req.params.id,
+    const notFound = () =>
+      reply.status(404).view("404.ejs", {
+        title: "پست یافت نشد",
+        user: req.user,
       });
 
+    try {
+      if (!isObjectId(req.params.id)) return notFound();
+
+      const post = await Post.findById(req.params.id)
+        .populate("author", PUBLIC_USER_FIELDS)
+        .lean();
+      if (!post) return notFound();
+
+      const viewerId = req.user?._id;
+      const formatted = formatPosts([post], viewerId)[0];
+
+      if ((req.headers.accept || "").includes("application/json")) {
+        return { success: true, post: formatted };
+      }
+
+      const [comments, totalComments] = await Promise.all([
+        getCommentsForPost(req.params.id, viewerId),
+        Comment.countDocuments({ post: req.params.id }),
+      ]);
+
       return reply.view("post.ejs", {
-        post: formatPosts([post])[0],
+        post: formatted,
         comments,
         totalComments,
         user: req.user,
         title: `پست ${post.author?.username || ""} · واتی‌واتی`,
       });
     } catch (error) {
-      if (error.name === "CastError") {
-        return reply.status(404).view("404.ejs", {
-          title: "پست یافت نشد",
-          user: req.user,
-        });
-      }
-
-      fastify.log.error({ error }, "Get post error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا",
-      });
+      req.log.error({ err: error }, "Get post error");
+      return reply.status(500).send({ success: false, message: "خطا" });
     }
   });
 
   fastify.post("/:id/like", auth, async (req, reply) => {
     try {
-      const post = await Post.findById(req.params.id);
+      if (!isObjectId(req.params.id)) return invalidId(reply);
 
-      if (!post) {
-        return reply.status(404).send({
-          success: false,
-          message: "پست یافت نشد",
-        });
+      const result = await likePost(fastify, req.user._id, req.params.id);
+      if (!result) {
+        return reply.status(404).send({ success: false, message: "پست یافت نشد" });
       }
-
-      const userId = req.user._id;
-      const likeIndex = post.likes.indexOf(userId);
-
-      if (likeIndex === -1) {
-        post.likes.push(userId);
-      } else {
-        post.likes.splice(likeIndex, 1);
-      }
-
-      await post.save();
-
-      const liked = likeIndex === -1;
-      const likesCount = post.likes.length;
-
-      fastify.io?.emit("post:liked", {
-        postId: post._id,
-        likesCount,
-        userId: userId.toString(),
-        liked,
-      });
-
-      if (liked && post.author.toString() !== userId.toString()) {
-        await sendNotification(fastify, post.author, userId, "like", {
-          postId: post._id,
-          message: "پست شما را لایک کرد",
-        });
-      }
-
-      try {
-        const stream = fastify.redis.scanStream({
-          match: "explore:*",
-          count: 100,
-        });
-
-        const pipeline = fastify.redis.pipeline();
-
-        stream.on("data", (keys) => {
-          if (keys.length > 0) {
-            keys.forEach((key) => pipeline.del(key));
-          }
-        });
-
-        stream.on("end", () => {
-          pipeline.exec().catch((error) => {
-            fastify.log.warn({ error }, "Failed to invalidate explore cache");
-          });
-        });
-      } catch (cacheError) {
-        fastify.log.warn({ cacheError }, "Cache invalidation warning");
-      }
-
-      return {
-        success: true,
-        liked,
-        likesCount,
-      };
+      return { success: true, ...result };
     } catch (error) {
-      if (error.name === "CastError") {
-        return reply.status(400).send({
-          success: false,
-          message: "شناسه نامعتبر",
-        });
-      }
-
-      fastify.log.error({ error }, "Like post error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا",
-      });
+      req.log.error({ err: error }, "Like post error");
+      return reply.status(500).send({ success: false, message: "خطا" });
     }
   });
 
   fastify.delete("/:id", auth, async (req, reply) => {
     try {
-      const post = await Post.findById(req.params.id);
+      if (!isObjectId(req.params.id)) return invalidId(reply);
 
+      const post = await Post.findById(req.params.id).select("author");
       if (!post) {
-        return reply.status(404).send({
-          success: false,
-          message: "پست یافت نشد",
-        });
+        return reply.status(404).send({ success: false, message: "پست یافت نشد" });
       }
 
-      const isAuthor = post.author.toString() === req.user._id.toString();
-      const isAdmin = req.user.role === "admin";
-
-      if (!isAuthor && !isAdmin) {
-        return reply.status(403).send({
-          success: false,
-          message: "دسترسی ندارید",
-        });
+      const isAuthor = sameId(post.author, req.user._id);
+      if (!isAuthor && req.user.role !== "admin") {
+        return reply.status(403).send({ success: false, message: "دسترسی ندارید" });
       }
 
-      await Comment.deleteMany({ post: post._id });
-      await Post.findByIdAndDelete(req.params.id);
+      await Promise.all([
+        Comment.deleteMany({ post: post._id }),
+        Post.deleteOne({ _id: post._id }),
+      ]);
 
       fastify.io?.emit("post:deleted", { postId: req.params.id });
+      await bumpExploreCache(fastify);
 
-      return {
-        success: true,
-        message: "حذف شد",
-      };
+      return { success: true, message: "حذف شد" };
     } catch (error) {
-      if (error.name === "CastError") {
-        return reply.status(400).send({
-          success: false,
-          message: "شناسه نامعتبر",
-        });
-      }
-
-      fastify.log.error({ error }, "Delete post error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا",
-      });
+      req.log.error({ err: error }, "Delete post error");
+      return reply.status(500).send({ success: false, message: "خطا" });
     }
   });
 };

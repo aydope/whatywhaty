@@ -87,9 +87,6 @@ commentSchema.pre("save", function () {
   if (this.content) {
     this.content = this.content.trim();
   }
-  if (this.parentComment) {
-    this.depth = 1;
-  }
 });
 
 commentSchema.pre("findOneAndUpdate", function () {

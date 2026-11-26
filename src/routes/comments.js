@@ -1,31 +1,21 @@
 const Comment = require("../models/Comment");
 const Post = require("../models/Post");
-const { sendNotification } = require("../services/notificationService");
 const Joi = require("joi");
+const { sendNotification } = require("../services/notificationService");
+const { likeComment } = require("../services/reactionService");
+const { withCommentLikes } = require("../services/likeService");
+const { deleteCommentTree } = require("../services/commentService");
+const { isObjectId, sameId } = require("../utils/ids");
+const { PUBLIC_USER_FIELDS } = require("../utils/publicUser");
 
 const MAX_NESTING_DEPTH = 5;
-const POPULATE_AUTHOR_SELECT = "username";
+const POPULATE_AUTHOR_SELECT = PUBLIC_USER_FIELDS;
 
 const createCommentSchema = Joi.object({
   content: Joi.string().min(1).max(280).required().trim(),
-  postId: Joi.string().required(),
-  parentCommentId: Joi.string().allow(null, ""),
+  postId: Joi.string().hex().length(24).required(),
+  parentCommentId: Joi.string().hex().length(24).allow(null, ""),
 });
-
-const validateBody = (schema, body) => {
-  const { error, value } = schema.validate(body, {
-    abortEarly: false,
-    stripUnknown: true,
-  });
-
-  if (error) {
-    const err = new Error(error.details[0].message);
-    err.statusCode = 400;
-    throw err;
-  }
-
-  return value;
-};
 
 const buildRepliesPopulate = (depth = MAX_NESTING_DEPTH) => {
   if (depth <= 0) return null;
@@ -39,40 +29,42 @@ const buildRepliesPopulate = (depth = MAX_NESTING_DEPTH) => {
   };
 };
 
-const deleteRepliesRecursively = async (commentId) => {
-  const replies = await Comment.find({ parentComment: commentId }).select(
-    "_id",
-  );
-
-  for (const reply of replies) {
-    await deleteRepliesRecursively(reply._id);
-    await Comment.findByIdAndDelete(reply._id);
-  }
+const pagination = (query, defaultLimit, maxLimit) => {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(maxLimit, Math.max(1, parseInt(query.limit, 10) || defaultLimit));
+  return { page, limit, skip: (page - 1) * limit };
 };
 
-const isAuthorOrAdmin = (comment, user) =>
-  comment.author.toString() === user._id.toString() || user.role === "admin";
+const pageInfo = (page, limit, total) => ({
+  page,
+  limit,
+  total,
+  totalPages: Math.ceil(total / limit),
+  hasMore: page < Math.ceil(total / limit),
+});
 
-module.exports = async function (fastify, opts) {
+module.exports = async function (fastify) {
   const auth = { preHandler: [fastify.authenticate] };
+  const optionalAuth = { preHandler: [fastify.authenticateSilent] };
 
-  fastify.get("/:commentId/replies", async (req, reply) => {
+  const invalidId = (reply) =>
+    reply.status(400).send({ success: false, message: "شناسه نامعتبر" });
+
+  fastify.get("/:commentId/replies", optionalAuth, async (req, reply) => {
     try {
       const { commentId } = req.params;
-      const { page = 1, limit = 5 } = req.query;
-      const pageNum = Math.max(1, parseInt(page));
-      const limitNum = Math.min(20, Math.max(1, parseInt(limit)));
-      const skip = (pageNum - 1) * limitNum;
+      if (!isObjectId(commentId)) return invalidId(reply);
+      const { page, limit, skip } = pagination(req.query, 5, 20);
 
       const [replies, total] = await Promise.all([
         Comment.find({ parentComment: commentId })
           .sort({ createdAt: -1 })
           .skip(skip)
-          .limit(limitNum)
-          .populate("author", "username")
+          .limit(limit)
+          .populate("author", POPULATE_AUTHOR_SELECT)
           .populate({
             path: "replies",
-            populate: { path: "author", select: "username" },
+            populate: { path: "author", select: POPULATE_AUTHOR_SELECT },
           })
           .lean(),
         Comment.countDocuments({ parentComment: commentId }),
@@ -80,38 +72,31 @@ module.exports = async function (fastify, opts) {
 
       return {
         success: true,
-        replies,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total,
-          totalPages: Math.ceil(total / limitNum),
-          hasMore: pageNum < Math.ceil(total / limitNum),
-        },
+        replies: replies.map((r) => withCommentLikes(r, req.user?._id)),
+        pagination: pageInfo(page, limit, total),
       };
     } catch (error) {
-      fastify.log.error({ error }, "Get replies error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا",
-      });
+      req.log.error({ err: error }, "Get replies error");
+      return reply.status(500).send({ success: false, message: "خطا" });
     }
   });
 
   fastify.post("/", auth, async (req, reply) => {
     try {
-      const { content, postId, parentCommentId } = validateBody(
-        createCommentSchema,
-        req.body,
-      );
+      const { error, value } = createCommentSchema.validate(req.body, {
+        abortEarly: false,
+        stripUnknown: true,
+      });
+      if (error) {
+        return reply
+          .status(400)
+          .send({ success: false, message: error.details[0].message });
+      }
+      const { content, postId, parentCommentId } = value;
 
-      const post = await Post.findById(postId).select("author comments");
-
+      const post = await Post.findById(postId).select("author");
       if (!post) {
-        return reply.status(404).send({
-          success: false,
-          message: "پست یافت نشد",
-        });
+        return reply.status(404).send({ success: false, message: "پست یافت نشد" });
       }
 
       let depth = 0;
@@ -119,23 +104,21 @@ module.exports = async function (fastify, opts) {
 
       if (parentCommentId) {
         parentComment = await Comment.findById(parentCommentId).select(
-          "author parentComment depth replies",
+          "author post parentComment depth",
         );
 
-        if (!parentComment) {
-          return reply.status(404).send({
-            success: false,
-            message: "کامنت یافت نشد",
-          });
+        // A reply must stay inside the post of the comment it answers.
+        if (!parentComment || !sameId(parentComment.post, postId)) {
+          return reply
+            .status(404)
+            .send({ success: false, message: "کامنت یافت نشد" });
         }
 
         depth = parentComment.depth + 1;
-
         if (depth > MAX_NESTING_DEPTH) {
-          return reply.status(400).send({
-            success: false,
-            message: "حداکثر عمق پاسخگویی",
-          });
+          return reply
+            .status(400)
+            .send({ success: false, message: "حداکثر عمق پاسخگویی" });
         }
       }
 
@@ -147,14 +130,13 @@ module.exports = async function (fastify, opts) {
         depth,
       });
 
-      if (!parentCommentId) {
-        await Post.findByIdAndUpdate(postId, {
-          $push: { comments: comment._id },
-        });
+      if (parentComment) {
+        await Comment.updateOne(
+          { _id: parentComment._id },
+          { $push: { replies: comment._id } },
+        );
       } else {
-        await Comment.findByIdAndUpdate(parentCommentId, {
-          $push: { replies: comment._id },
-        });
+        await Post.updateOne({ _id: postId }, { $push: { comments: comment._id } });
       }
 
       const populatedComment = await Comment.findById(comment._id)
@@ -168,87 +150,52 @@ module.exports = async function (fastify, opts) {
           message: "روی پست شما کامنت گذاشت",
         });
       } else {
-        await sendNotification(
-          fastify,
-          parentComment.author,
-          req.user._id,
-          "reply",
-          {
-            postId: post._id,
-            commentId: comment._id,
-            message: "به کامنت شما پاسخ داد",
-          },
-        );
+        await sendNotification(fastify, parentComment.author, req.user._id, "reply", {
+          postId: post._id,
+          commentId: comment._id,
+          message: "به کامنت شما پاسخ داد",
+        });
 
         if (parentComment.parentComment) {
-          const rootComment = await Comment.findById(
-            parentComment.parentComment,
-          )
+          const rootComment = await Comment.findById(parentComment.parentComment)
             .select("author")
             .lean();
 
           if (
             rootComment &&
-            rootComment.author.toString() !== req.user._id.toString() &&
-            rootComment.author.toString() !== parentComment.author.toString()
+            !sameId(rootComment.author, req.user._id) &&
+            !sameId(rootComment.author, parentComment.author)
           ) {
-            await sendNotification(
-              fastify,
-              rootComment.author,
-              req.user._id,
-              "reply",
-              {
-                postId: post._id,
-                commentId: comment._id,
-                message: "به گفتگوی شما پاسخ داد",
-              },
-            );
+            await sendNotification(fastify, rootComment.author, req.user._id, "reply", {
+              postId: post._id,
+              commentId: comment._id,
+              message: "به گفتگوی شما پاسخ داد",
+            });
           }
         }
       }
 
-      fastify.io?.emit("comment:new", { postId, comment: populatedComment });
+      const payload = withCommentLikes(populatedComment, req.user._id);
+      fastify.io?.emit("comment:new", { postId, comment: withCommentLikes(populatedComment) });
 
-      return reply.status(201).send({
-        success: true,
-        comment: populatedComment,
-      });
+      return reply.status(201).send({ success: true, comment: payload });
     } catch (error) {
-      if (error.statusCode === 400) {
-        return reply.status(400).send({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      if (error.name === "CastError") {
-        return reply.status(400).send({
-          success: false,
-          message: "شناسه نامعتبر",
-        });
-      }
-
-      fastify.log.error({ error }, "Create comment error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در ثبت کامنت",
-      });
+      req.log.error({ err: error }, "Create comment error");
+      return reply.status(500).send({ success: false, message: "خطا در ثبت کامنت" });
     }
   });
 
-  fastify.get("/post/:postId", async (req, reply) => {
+  fastify.get("/post/:postId", optionalAuth, async (req, reply) => {
     try {
       const { postId } = req.params;
-      const { page = 1, limit = 20 } = req.query;
-      const pageNum = Math.max(1, parseInt(page));
-      const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
-      const skip = (pageNum - 1) * limitNum;
+      if (!isObjectId(postId)) return invalidId(reply);
+      const { page, limit, skip } = pagination(req.query, 20, 50);
 
       const [comments, total] = await Promise.all([
         Comment.find({ post: postId, parentComment: null })
           .sort({ createdAt: -1 })
           .skip(skip)
-          .limit(limitNum)
+          .limit(limit)
           .populate("author", POPULATE_AUTHOR_SELECT)
           .populate(buildRepliesPopulate())
           .lean(),
@@ -257,146 +204,54 @@ module.exports = async function (fastify, opts) {
 
       return {
         success: true,
-        comments,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total,
-          totalPages: Math.ceil(total / limitNum),
-          hasMore: pageNum < Math.ceil(total / limitNum),
-        },
+        comments: comments.map((c) => withCommentLikes(c, req.user?._id)),
+        pagination: pageInfo(page, limit, total),
       };
     } catch (error) {
-      fastify.log.error({ error }, "Get comments error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا",
-      });
+      req.log.error({ err: error }, "Get comments error");
+      return reply.status(500).send({ success: false, message: "خطا" });
     }
   });
 
   fastify.post("/:id/like", auth, async (req, reply) => {
     try {
-      const comment = await Comment.findById(req.params.id).select(
-        "likes author post",
-      );
+      if (!isObjectId(req.params.id)) return invalidId(reply);
 
-      if (!comment) {
-        return reply.status(404).send({
-          success: false,
-          message: "کامنت یافت نشد",
-        });
+      const result = await likeComment(fastify, req.user._id, req.params.id);
+      if (!result) {
+        return reply.status(404).send({ success: false, message: "کامنت یافت نشد" });
       }
-
-      const userId = req.user._id;
-      const likeIndex = comment.likes.indexOf(userId);
-
-      if (likeIndex === -1) {
-        comment.likes.push(userId);
-      } else {
-        comment.likes.splice(likeIndex, 1);
-      }
-
-      comment.likesCount = comment.likes.length;
-      await comment.save();
-
-      fastify.io?.emit("comment:liked", {
-        commentId: comment._id,
-        likesCount: comment.likesCount,
-        userId: userId.toString(),
-        liked: likeIndex === -1,
-      });
-
-      if (likeIndex === -1 && comment.author.toString() !== userId.toString()) {
-        await sendNotification(
-          fastify,
-          comment.author,
-          userId,
-          "like_comment",
-          {
-            postId: comment.post,
-            commentId: comment._id,
-            message: "کامنت شما را لایک کرد",
-          },
-        );
-      }
-
-      return {
-        success: true,
-        liked: likeIndex === -1,
-        likesCount: comment.likesCount,
-      };
+      return { success: true, ...result };
     } catch (error) {
-      if (error.name === "CastError") {
-        return reply.status(400).send({
-          success: false,
-          message: "شناسه نامعتبر",
-        });
-      }
-
-      fastify.log.error({ error }, "Like comment error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا",
-      });
+      req.log.error({ err: error }, "Like comment error");
+      return reply.status(500).send({ success: false, message: "خطا" });
     }
   });
 
   fastify.delete("/:id", auth, async (req, reply) => {
     try {
+      if (!isObjectId(req.params.id)) return invalidId(reply);
+
       const comment = await Comment.findById(req.params.id);
-
       if (!comment) {
-        return reply.status(404).send({
-          success: false,
-          message: "کامنت یافت نشد",
-        });
+        return reply.status(404).send({ success: false, message: "کامنت یافت نشد" });
       }
 
-      if (!isAuthorOrAdmin(comment, req.user)) {
-        return reply.status(403).send({
-          success: false,
-          message: "دسترسی ندارید",
-        });
+      if (!sameId(comment.author, req.user._id) && req.user.role !== "admin") {
+        return reply.status(403).send({ success: false, message: "دسترسی ندارید" });
       }
 
-      if (!comment.parentComment) {
-        await Post.findByIdAndUpdate(comment.post, {
-          $pull: { comments: comment._id },
-        });
-      }
-
-      if (comment.parentComment) {
-        await Comment.findByIdAndUpdate(comment.parentComment, {
-          $pull: { replies: comment._id },
-        });
-      }
-
-      await deleteRepliesRecursively(comment._id);
-      await Comment.findByIdAndDelete(comment._id);
+      await deleteCommentTree(comment);
 
       fastify.io?.emit("comment:deleted", {
         commentId: req.params.id,
         postId: comment.post,
       });
 
-      return {
-        success: true,
-        message: "حذف شد",
-      };
+      return { success: true, message: "حذف شد" };
     } catch (error) {
-      if (error.name === "CastError") {
-        return reply.status(400).send({
-          success: false,
-          message: "شناسه نامعتبر",
-        });
-      }
-
-      fastify.log.error({ error }, "Delete comment error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا",
-      });
+      req.log.error({ err: error }, "Delete comment error");
+      return reply.status(500).send({ success: false, message: "خطا" });
     }
   });
 };
