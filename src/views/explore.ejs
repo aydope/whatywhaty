@@ -33,6 +33,7 @@
         },
       };
     </script>
+    <link rel="stylesheet" href="/public/css/social.css" />
     <style>
       * {
         margin: 0;
@@ -930,15 +931,15 @@
 
           <div class="dropdown" id="profileDropdown">
             <div class="profile-avatar-text" onclick="toggleDropdown()">
-              <%= user.username.charAt(0).toUpperCase() %>
+              <%= [...(user.displayName || user.username)][0].toUpperCase() %>
             </div>
 
             <div class="dropdown-menu" id="dropdownMenu">
               <div class="dropdown-header">
                 <div class="avatar-text">
-                  <%= user.username.charAt(0).toUpperCase() %>
+                  <%= [...(user.displayName || user.username)][0].toUpperCase() %>
                 </div>
-                <span class="username"><%= user.username %></span>
+                <span class="username"><%= user.displayName || user.username %></span>
               </div>
 
               <a href="/@<%= user.username %>" class="dropdown-item">
@@ -979,8 +980,8 @@
       </div>
 
       <div class="user-info">
-        <div class="avatar"><%= user.username.charAt(0).toUpperCase() %></div>
-        <span class="name"><%= user.username %></span>
+        <div class="avatar"><%= [...(user.displayName || user.username)][0].toUpperCase() %></div>
+        <span class="name"><%= user.displayName || user.username %></span>
       </div>
 
       <a href="/" class="nav-item">
@@ -1257,11 +1258,7 @@
         card.dataset.liked = isLiked ? "true" : "false";
 
         card.innerHTML = `
-        <div class="post-header">
-          <div class="post-avatar" style="background:${avatarColor}">${initial}</div>
-          <a href="/@${authorName}" class="post-username">${authorName}</a>
-          <span class="post-time">${timeAgo(post.createdAt)}</span>
-        </div>
+        ${Social.postHeaderHtml(post, timeAgo(post.createdAt))}
         <div class="post-content">${escapeHtml(post.content || "")}</div>
         <div class="post-actions">
           <button class="post-action-btn ${isLiked ? "liked" : ""}" onclick="event.stopPropagation();toggleLike('${post._id}', this)">
@@ -1272,14 +1269,11 @@
             <i class="bi bi-chat"></i>
             <span class="count">${commentsCount}</span>
           </span>
+          ${Social.shareButtonHtml(post._id)}
         </div>
       `;
 
-        card.addEventListener("click", (e) => {
-          if (!e.target.closest("button")) {
-            window.location.href = "/posts/" + post._id;
-          }
-        });
+        Social.bindCard(card, post._id);
 
         return card;
       }

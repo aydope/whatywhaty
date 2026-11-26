@@ -151,7 +151,8 @@ function setupSocketListeners(socket) {
       !isMessagesPage || (isMessagesPage && currentChatUserId !== senderId);
 
     if (shouldShowNotification) {
-      const senderName = message.sender?.username || "کاربر";
+      const senderName =
+        message.sender?.displayName || message.sender?.username || "کاربر";
       const messageContent =
         typeof message.content === "string"
           ? message.content
@@ -269,7 +270,8 @@ function showNotificationToast(notification) {
   const toast = document.createElement("div");
   toast.className = "notification-toast";
 
-  const senderName = notification.sender?.username || "کاربر";
+  const senderName =
+    notification.sender?.displayName || notification.sender?.username || "کاربر";
   const senderId = notification.sender?._id || "";
   const link = notification.postId
     ? `/posts/${notification.postId}`

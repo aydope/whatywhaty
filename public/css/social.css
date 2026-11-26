@@ -1,0 +1,150 @@
+/* Shared look for posts and profiles: Instagram style avatar rings and
+   double tap hearts, Twitter style name / @handle / time lines. */
+
+.post-card {
+  position: relative;
+}
+
+.post-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar-ring {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5);
+  text-decoration: none;
+}
+
+.avatar-ring .avatar-core {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  user-select: none;
+}
+
+.avatar-ring.size-lg {
+  padding: 3px;
+}
+
+.avatar-ring.size-lg .avatar-core {
+  width: 96px;
+  height: 96px;
+  border-width: 4px;
+  font-size: 2.4rem;
+}
+
+@media (min-width: 768px) {
+  .avatar-ring.size-lg .avatar-core {
+    width: 128px;
+    height: 128px;
+    font-size: 3rem;
+  }
+}
+
+.post-author-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.post-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.post-name-line .post-username {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55%;
+}
+
+.post-handle {
+  color: #8e8e8e;
+  font-size: 0.85rem;
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.post-dot {
+  color: #8e8e8e;
+}
+
+.post-name-line .post-time {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.post-action-btn.share {
+  margin-right: auto;
+}
+
+.heart-burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-size: 84px;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0);
+  animation: heartBurst 0.8s ease forwards;
+  z-index: 3;
+}
+
+@keyframes heartBurst {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+  }
+  15% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 1;
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -80%) scale(1.1);
+    opacity: 0;
+  }
+}
+
+.profile-handle {
+  direction: ltr;
+  unicode-bidi: isolate;
+  color: #8e8e8e;
+}
+
+.profile-bio {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+
+.profile-bio a {
+  color: #0095f6;
+}

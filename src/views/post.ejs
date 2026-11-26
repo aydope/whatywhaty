@@ -27,6 +27,7 @@
       }
     }
   </script>
+  <link rel="stylesheet" href="/public/css/social.css" />
   <style>
     * {
       margin: 0;
@@ -273,16 +274,16 @@
         <% if (user) { %>
         <div class="relative" id="profileDropdown">
           <button class="w-9 h-9 rounded-full cursor-pointer border-2 border-transparent hover:border-primary transition-all flex items-center justify-center font-bold text-sm text-white bg-gradient-to-br from-primary to-indigo-600 flex-shrink-0 select-none" onclick="toggleDropdown()">
-            <%= user.username.charAt(0).toUpperCase() %>
+            <%= [...(user.displayName || user.username)][0].toUpperCase() %>
           </button>
 
           <div class="absolute top-full left-0 mt-2 bg-white rounded-2xl border border-border shadow-xl min-w-[220px] py-2 opacity-0 invisible -translate-y-2 scale-95 z-50" id="dropdownMenu">
             <div class="px-4 py-3 flex items-center gap-3 border-b border-gray-100">
               <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-base text-white bg-gradient-to-br from-primary to-indigo-600 flex-shrink-0 select-none">
-                <%= user.username.charAt(0).toUpperCase() %>
+                <%= [...(user.displayName || user.username)][0].toUpperCase() %>
               </div>
               <div>
-                <div class="font-semibold text-sm text-dark"><%= user.username %></div>
+                <div class="font-semibold text-sm text-dark"><%= user.displayName || user.username %></div>
                 <div class="text-xs text-muted">@<%= user.username %></div>
               </div>
             </div>
@@ -324,7 +325,7 @@
     <div class="flex items-center gap-3 px-3.5 py-3 mb-3 rounded-xl bg-gray-50">
       <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-indigo-600 text-white flex items-center justify-center font-bold text-base flex-shrink-0"><%= user ? user.username.charAt(0).toUpperCase() : '?' %></div>
       <div>
-        <div class="font-semibold text-sm text-dark"><%= user ? user.username : 'کاربر' %></div>
+        <div class="font-semibold text-sm text-dark"><%= user ? (user.displayName || user.username) : 'کاربر' %></div>
         <div class="text-xs text-muted"><%= user ? '@' + user.username : 'مهمان' %></div>
       </div>
     </div>
@@ -389,11 +390,14 @@
 
     <div class="bg-white rounded-2xl border border-border p-6 mb-5 shadow-sm">
       <div class="flex items-center gap-3 mb-4">
-        <div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg text-white flex-shrink-0 select-none bg-gradient-to-br from-indigo-500 to-purple-600">
-          <%= post.author.username.charAt(0).toUpperCase() %>
-        </div>
-        <div class="flex-1">
-          <a href="/@<%= post.author.username %>" class="font-semibold text-sm text-dark no-underline hover:text-primary transition-colors">@<%= post.author.username %></a>
+        <a href="/@<%= post.author.username %>" class="avatar-ring no-underline">
+          <span class="avatar-core bg-gradient-to-br from-indigo-500 to-purple-600"><%= [...(post.author.displayName || post.author.username)][0].toUpperCase() %></span>
+        </a>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline gap-1.5 min-w-0">
+            <a href="/@<%= post.author.username %>" class="font-bold text-sm text-dark no-underline hover:text-primary transition-colors truncate"><%= post.author.displayName || post.author.username %></a>
+            <span class="post-handle">@<%= post.author.username %></span>
+          </div>
           <div class="text-xs text-muted mt-0.5"><%= new Date(post.createdAt).toLocaleString('fa-IR-u-nu-latn') %></div>
         </div>
         <% if (user && (user._id.toString() === post.author._id.toString() || user.role === 'admin')) { %>
@@ -438,6 +442,7 @@
             <%
             const author = comment.author || {};
             const authorUsername = author.username || 'unknown';
+            const authorName = author.displayName || authorUsername;
             const authorIdStr = (author._id || author).toString ? (author._id || author).toString() : '';
             const isCommentLiked = comment.likes && user && comment.likes.some(function(l) { return (l._id || l).toString() === user._id.toString(); });
             const avatarColor = ['#f09433','#e6683c','#dc2743','#cc2366','#bc1888','#0095f6','#34a853','#ea4335','#8b5cf6','#ec4899'][Math.abs(authorUsername.charCodeAt(0) || 0) % 10];
@@ -445,8 +450,9 @@
             %>
             <div class="bg-gray-50 rounded-xl px-4 py-3.5 mb-2 transition-all hover:bg-gray-100" data-comment-id="<%= comment._id %>">
               <div class="flex items-center gap-2.5 mb-1">
-                <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white flex-shrink-0 select-none" style="background:<%= avatarColor %>;"><%= authorUsername.charAt(0).toUpperCase() %></div>
-                <a href="/@<%= authorUsername %>" class="font-semibold text-sm text-dark no-underline hover:text-primary transition-colors">@<%= authorUsername %></a>
+                <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white flex-shrink-0 select-none" style="background:<%= avatarColor %>;"><%= [...authorName][0].toUpperCase() %></div>
+                <a href="/@<%= authorUsername %>" class="font-semibold text-sm text-dark no-underline hover:text-primary transition-colors truncate"><%= authorName %></a>
+                <span class="post-handle">@<%= authorUsername %></span>
                 <span class="text-xs text-gray-400 mr-auto"><%= new Date(comment.createdAt).toLocaleString('fa-IR-u-nu-latn') %></span>
                 <% if (user && (user._id.toString() === authorIdStr || user.role === 'admin')) { %>
                   <button class="bg-none border-none text-gray-400 hover:text-danger cursor-pointer p-1 rounded-md hover:bg-red-50 transition-all" onclick="openDeleteConfirm('comment', '<%= comment._id %>')" title="حذف">
@@ -458,7 +464,7 @@
               <div class="flex items-center gap-3 pr-11">
                 <button class="comment-like-btn <%= isCommentLiked ? 'liked' : '' %>" onclick="toggleCommentLike('<%= comment._id %>')">
                   <i class="bi <%= isCommentLiked ? 'bi-heart-fill' : 'bi-heart' %>"></i>
-                  <span id="commentLikes-<%= comment._id %>"><%= comment.likes ? comment.likes.length : 0 %></span>
+                  <span id="commentLikes-<%= comment._id %>"><%= comment.likesCount ?? (comment.likes ? comment.likes.length : 0) %></span>
                 </button>
                 <button class="flex items-center gap-1 text-xs font-medium text-muted bg-none border-none cursor-pointer px-2 py-1 rounded-md hover:bg-gray-200 transition-all font-sans" onclick="showReplyForm('<%= comment._id %>')">
                   <i class="bi bi-reply text-sm"></i> پاسخ
@@ -891,7 +897,8 @@
         div.style.animation = 'slideDown 0.3s ease';
 
         const an = c.author?.username || 'unknown';
-        const ai = an.charAt(0).toUpperCase();
+        const anName = Social.nameOf(c.author);
+        const ai = Social.initialOf(anName);
         const t = timeAgo(c.createdAt);
         const lc = c.likesCount || c.likes?.length || 0;
         const aid = (c.author?._id || c.author).toString();
@@ -901,7 +908,8 @@
         div.innerHTML = `
           <div class="flex items-center gap-2.5 mb-1">
             <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white flex-shrink-0 select-none" style="background:${avatarColor};">${ai}</div>
-            <a href="/@${an}" class="font-semibold text-sm text-dark no-underline hover:text-primary transition-colors">@${an}</a>
+            <a href="/@${Social.esc(an)}" class="font-semibold text-sm text-dark no-underline hover:text-primary transition-colors truncate">${Social.esc(anName)}</a>
+            <span class="post-handle">@${Social.esc(an)}</span>
             <span class="text-xs text-gray-400 mr-auto">${t}</span>
             ${(CURRENT_USER_ID === aid || IS_ADMIN) ? '<button class="bg-none border-none text-gray-400 hover:text-danger cursor-pointer p-1 rounded-md hover:bg-red-50 transition-all" onclick="openDeleteConfirm(\'comment\', \'' + c._id + '\')" title="حذف"><i class="bi bi-trash text-sm"></i></button>' : ''}
           </div>
