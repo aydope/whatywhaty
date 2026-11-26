@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>@<%= profileUser.username %> · واتی‌واتی</title>
+  <title><%= profileUser.displayName || profileUser.username %> (@<%= profileUser.username %>) · واتی‌واتی</title>
   <link href="https://cdn.jsdelivr.net/gh/rastikerdar/sahel-font@v3.4.0/dist/fonts/Sahel.css" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -27,6 +27,7 @@
       }
     }
   </script>
+  <link rel="stylesheet" href="/public/css/social.css" />
   <style>
     * {
       margin: 0;
@@ -306,9 +307,19 @@
 
           <form id="editProfileForm">
             <div class="mb-4">
-              <label class="block text-muted font-medium text-xs mb-1.5" for="editUsername">نام کاربری</label>
+              <label class="block text-muted font-medium text-xs mb-1.5" for="editDisplayName">نام نمایشی</label>
+              <input type="text" id="editDisplayName" class="w-full bg-gray-50 border border-border rounded-xl px-4 py-3 text-dark font-sans text-sm transition-all focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10" value="<%= profileUser.displayName || '' %>" maxlength="50" placeholder="مثلاً: علی رضایی" />
+              <span class="block text-gray-400 text-xs mt-1.5">هر نامی می‌تواند باشد و تکراری بودنش مشکلی ندارد</span>
+            </div>
+            <div class="mb-4">
+              <label class="block text-muted font-medium text-xs mb-1.5" for="editBio">بیو</label>
+              <textarea id="editBio" rows="3" maxlength="160" class="w-full bg-gray-50 border border-border rounded-xl px-4 py-3 text-dark font-sans text-sm transition-all focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 resize-none" placeholder="درباره‌ی خودتان بنویسید..."><%= profileUser.bio || '' %></textarea>
+              <span class="block text-gray-400 text-xs mt-1.5 text-left" id="bioCounter" dir="ltr">0/160</span>
+            </div>
+            <div class="mb-4">
+              <label class="block text-muted font-medium text-xs mb-1.5" for="editUsername">آیدی (نام کاربری)</label>
               <input type="text" id="editUsername" class="w-full bg-gray-50 border border-border rounded-xl px-4 py-3 text-dark font-sans text-sm transition-all focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10" value="<%= profileUser.username %>" required minlength="3" maxlength="30" />
-              <span class="block text-gray-400 text-xs mt-1.5">بین ۳ تا ۳۰ کاراکتر</span>
+              <span class="block text-gray-400 text-xs mt-1.5">فقط حروف انگلیسی و عدد، بین ۳ تا ۳۰ کاراکتر. دیگران با @آیدی شما می‌توانند به شما پیام بدهند</span>
             </div>
             <div class="mb-5">
               <label class="block text-muted font-medium text-xs mb-1.5" for="editEmail">ایمیل</label>
@@ -369,14 +380,17 @@
       <div class="flex flex-col md:flex-row md:items-center gap-6 md:gap-10">
 
         <div class="flex justify-center md:justify-start">
-          <div class="w-24 h-24 md:w-32 md:h-32 rounded-full flex items-center justify-center font-bold text-3xl md:text-4xl text-white flex-shrink-0 select-none bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 border-4 border-white shadow-xl transition-transform hover:scale-105">
-            <%= profileUser.username.charAt(0).toUpperCase() %>
+          <div class="avatar-ring size-lg shadow-xl">
+            <span class="avatar-core bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500"><%= [...(profileUser.displayName || profileUser.username)][0].toUpperCase() %></span>
           </div>
         </div>
 
         <div class="flex-1 text-center md:text-right">
           <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-5 mb-4">
-            <span class="text-xl md:text-2xl font-bold text-dark"><%= profileUser.username %></span>
+            <div>
+              <h1 class="text-xl md:text-2xl font-bold text-dark leading-tight m-0"><%= profileUser.displayName || profileUser.username %></h1>
+              <div class="profile-handle text-sm mt-0.5">@<%= profileUser.username %></div>
+            </div>
 
             <% if (currentUser && currentUser._id.toString() === profileUser._id.toString()) { %>
               <button onclick="openEditModal()" class="bg-gray-50 text-dark border border-border px-6 py-2 rounded-xl font-semibold text-sm hover:bg-gray-100 transition-all font-sans cursor-pointer">
@@ -398,6 +412,12 @@
             <% } %>
           </div>
 
+          <% if (profileUser.bio) { %>
+            <p class="profile-bio text-sm text-dark mb-2 mt-0"><%= profileUser.bio %></p>
+          <% } %>
+          <% if (profileUser.createdAt) { %>
+            <div class="text-muted text-xs mb-1"><i class="bi bi-calendar3"></i> عضو واتی‌واتی از <%= new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'long' }).format(new Date(profileUser.createdAt)) %></div>
+          <% } %>
           <% if (profileUser.email) { %>
             <div class="text-muted text-sm mb-1"><i class="bi bi-envelope"></i> <%= profileUser.email %></div>
           <% } %>
@@ -407,17 +427,17 @@
             </div>
           <% } %>
 
-          <div class="flex justify-center md:justify-start gap-8 md:gap-12 mt-5">
-            <div class="text-center cursor-pointer group" onclick="openFollowModal('followers')">
-              <div class="text-2xl font-bold text-dark group-hover:text-primary transition-colors" id="followersCount"><%= profileUser.followers ? profileUser.followers.length : 0 %></div>
+          <div class="flex justify-center md:justify-start gap-6 md:gap-8 mt-4 mb-3">
+            <div class="cursor-pointer group flex items-baseline gap-1.5" onclick="openFollowModal('followers')">
+              <div class="text-base font-bold text-dark group-hover:text-primary transition-colors" id="followersCount"><%= profileUser.followers ? profileUser.followers.length : 0 %></div>
               <div class="text-muted text-xs font-normal mt-0.5">دنبال‌کننده</div>
             </div>
-            <div class="text-center cursor-pointer group" onclick="openFollowModal('following')">
-              <div class="text-2xl font-bold text-dark group-hover:text-primary transition-colors" id="followingCount"><%= profileUser.following ? profileUser.following.length : 0 %></div>
+            <div class="cursor-pointer group flex items-baseline gap-1.5" onclick="openFollowModal('following')">
+              <div class="text-base font-bold text-dark group-hover:text-primary transition-colors" id="followingCount"><%= profileUser.following ? profileUser.following.length : 0 %></div>
               <div class="text-muted text-xs font-normal mt-0.5">دنبال‌شونده</div>
             </div>
-            <div class="text-center">
-              <div class="text-2xl font-bold text-dark" id="postsCount">0</div>
+            <div class="flex items-baseline gap-1.5">
+              <div class="text-base font-bold text-dark" id="postsCount">0</div>
               <div class="text-muted text-xs font-normal mt-0.5">پست</div>
             </div>
           </div>
@@ -714,11 +734,7 @@
 
           html += `
             <div class="bg-gray-50 rounded-xl px-4 py-4 cursor-pointer transition-all border border-transparent hover:bg-gray-100 hover:border-gray-200" onclick="window.location.href='/posts/${post._id}'">
-              <div class="flex items-center gap-2 mb-3">
-                <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white flex-shrink-0 select-none" style="background:${avatarColor};">${initial}</div>
-                <span class="font-semibold text-sm text-dark">${authorName}</span>
-                <span class="text-xs text-gray-400 mr-auto">${timeAgo(post.createdAt)}</span>
-              </div>
+              <div class="mb-3">${Social.postHeaderHtml(post, timeAgo(post.createdAt))}</div>
               <div class="text-sm leading-relaxed text-dark whitespace-pre-wrap break-words mb-3 pr-10">${escapeHtml(post.content)}</div>
               <div class="flex items-center gap-5 pr-10">
                 <span class="flex items-center gap-1.5 text-xs text-muted">
@@ -934,13 +950,14 @@
 
       const createUserItem = (user) => {
         const username = user.username || 'unknown';
-        const avatarColor = getAvatarColor(username);
-        const initial = getInitial(username);
 
         return `
-          <div class="flex items-center gap-3 px-5 py-3 cursor-pointer transition-colors hover:bg-gray-50" onclick="window.location.href='/@${username}'">
-            <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-base text-white flex-shrink-0 select-none shadow-md" style="background:${avatarColor};">${initial}</div>
-            <span class="font-semibold text-sm text-dark">${username}</span>
+          <div class="flex items-center gap-3 px-5 py-3 cursor-pointer transition-colors hover:bg-gray-50" onclick="window.location.href='/@${Social.esc(username)}'">
+            ${Social.avatarHtml(user)}
+            <div class="min-w-0">
+              <div class="font-semibold text-sm text-dark truncate">${Social.esc(Social.nameOf(user))}</div>
+              <div class="profile-handle text-xs">@${Social.esc(username)}</div>
+            </div>
           </div>
         `;
       };
@@ -974,6 +991,14 @@
         if (e.target === this) window.closeFollowModal();
       });
 
+      const bioInput = document.getElementById('editBio');
+      const bioCounter = document.getElementById('bioCounter');
+      if (bioInput && bioCounter) {
+        const updateBioCounter = () => { bioCounter.textContent = bioInput.value.length + '/160'; };
+        bioInput.addEventListener('input', updateBioCounter);
+        updateBioCounter();
+      }
+
       const editForm = document.getElementById('editProfileForm');
       if (editForm) {
         editForm.addEventListener('submit', async (e) => {
@@ -981,6 +1006,8 @@
 
           const username = document.getElementById('editUsername').value.trim();
           const email = document.getElementById('editEmail').value.trim();
+          const displayName = document.getElementById('editDisplayName').value.trim();
+          const bio = document.getElementById('editBio').value.trim();
 
           if (!username || username.length < 3 || username.length > 30) {
             showFormMessage('info', 'نام کاربری باید بین ۳ تا ۳۰ کاراکتر باشد', 'error');
@@ -1000,7 +1027,7 @@
             const resp = await tokenManager.fetchWithAuth('/users/profile', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ username, email })
+              body: JSON.stringify({ username, email, displayName, bio })
             });
             const data = await resp.json();
 
@@ -1129,7 +1156,7 @@
               message += `<br/><a href="${data.redirect}" target="_blank" style="color: #0095f6; text-decoration: underline; display: inline-block; margin-top: 8px;">مشاهده لینک بازیابی</a>`;
             }
 
-            message += `<br/><span style="font-size: 0.8rem; color: #8e8e8e; display: block; margin-top: 8px;">⏳ لینک به مدت 5 دقیقه معتبر است</span>`;
+            message += `<br/><span style="font-size: 0.8rem; color: #8e8e8e; display: block; margin-top: 8px;">⏳ لینک به مدت 30 دقیقه معتبر است</span>`;
 
             showFormMessage('password', message, 'success');
           } else {

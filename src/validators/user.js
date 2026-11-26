@@ -7,6 +7,14 @@ const updateProfileSchema = Joi.object({
     "string.max": "نام کاربری نمی‌تواند بیشتر از {#limit} کاراکتر باشد",
   }),
 
+  displayName: Joi.string().trim().max(50).allow("").messages({
+    "string.max": "نام نمایشی نمی‌تواند بیشتر از ۵۰ کاراکتر باشد",
+  }),
+
+  bio: Joi.string().max(160).allow("").messages({
+    "string.max": "بیو نمی‌تواند بیشتر از ۱۶۰ کاراکتر باشد",
+  }),
+
   email: Joi.string().email({ minDomainSegments: 2 }).messages({
     "string.email": "لطفاً یک آدرس ایمیل معتبر وارد کنید",
     "string.empty": "ایمیل نمی‌تواند خالی باشد",

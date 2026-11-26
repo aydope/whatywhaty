@@ -2,363 +2,268 @@ const User = require("../models/User");
 const Post = require("../models/Post");
 const { sendNotification } = require("../services/notificationService");
 const { updateProfileSchema } = require("../validators/user");
+const { isUsernameTaken } = require("../utils/usernames");
+const { withViewerLikes } = require("../services/likeService");
+const { isObjectId, sameId } = require("../utils/ids");
+const { PUBLIC_USER_FIELDS } = require("../utils/publicUser");
 
 const USER_NOT_FOUND = "کاربر مورد نظر یافت نشد";
 const CANNOT_SELF_ACTION = "نمی‌توانید این عملیات را روی خودتان انجام دهید";
 const BLOCKED_BY_USER = "شما توسط این کاربر بلاک شده‌اید";
 const USERNAME_TAKEN = "این نام کاربری قبلاً استفاده شده است";
+const EMAIL_TAKEN = "این ایمیل قبلاً استفاده شده است";
+const INVALID_ID = "شناسه نامعتبر است";
+
+const httpError = (message, statusCode) =>
+  Object.assign(new Error(message), { statusCode });
+
+const assertValidId = (id) => {
+  if (!isObjectId(id)) throw httpError(INVALID_ID, 400);
+};
+
+const assertNotSelf = (currentUserId, targetId) => {
+  if (sameId(currentUserId, targetId)) throw httpError(CANNOT_SELF_ACTION, 400);
+};
 
 const findUserById = async (id, select = "") => {
   const user = await User.findById(id).select(select);
-
-  if (!user) {
-    const error = new Error(USER_NOT_FOUND);
-    error.statusCode = 404;
-    throw error;
-  }
-
+  if (!user) throw httpError(USER_NOT_FOUND, 404);
   return user;
 };
 
-const ensureNotSelf = (currentUserId, targetId) => {
-  if (currentUserId === targetId.toString()) {
-    const error = new Error(CANNOT_SELF_ACTION);
-    error.statusCode = 400;
-    throw error;
-  }
+const pagination = (query, defaultLimit, maxLimit) => {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(maxLimit, Math.max(1, parseInt(query.limit, 10) || defaultLimit));
+  return { page, limit, skip: (page - 1) * limit };
 };
-
-const ensureNotBlocked = (targetUser, currentUserId) => {
-  if (targetUser.blockedUsers?.includes(currentUserId)) {
-    const error = new Error(BLOCKED_BY_USER);
-    error.statusCode = 403;
-    throw error;
-  }
-};
-
-const isUsernameTaken = async (username, excludeUserId) => {
-  const existingUser = await User.findOne({
-    username,
-    _id: { $ne: excludeUserId },
-  });
-
-  return !!existingUser;
-};
-
-const formatPosts = (posts) =>
-  posts.map((post) => ({
-    ...post,
-    likesCount: post.likes?.length || 0,
-    commentsCount: post.comments?.length || 0,
-  }));
 
 module.exports = async function (fastify) {
   const auth = { preHandler: [fastify.authenticate] };
 
+  const fail = (req, reply, error, fallback) => {
+    if (error.statusCode && error.statusCode < 500) {
+      return reply
+        .status(error.statusCode)
+        .send({ success: false, message: error.message });
+    }
+    req.log.error({ err: error }, fallback);
+    return reply.status(500).send({ success: false, message: fallback });
+  };
+
   fastify.get("/search", auth, async (req, reply) => {
     try {
-      const query = req.query.q?.trim() || "";
-
+      // "@alice" searches by id; anything else matches id and display name.
+      const query = (typeof req.query.q === "string" ? req.query.q : "")
+        .trim()
+        .replace(/^@/, "");
       if (query.length < 2 || query.length > 64) {
         return { success: true, users: [] };
       }
 
-      const sanitizedQuery = query.replace(/[.*+?^${}()|[\]\\'"!]/g, "\\$&");
-
-      const users = await User.find({
-        username: { $regex: sanitizedQuery, $options: "i" },
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const found = await User.find({
+        $or: [
+          { username: { $regex: escaped, $options: "i" } },
+          { displayName: { $regex: escaped, $options: "i" } },
+        ],
         _id: { $ne: req.user._id },
       })
-        .select("username")
-        .limit(10);
+        .select(PUBLIC_USER_FIELDS)
+        .limit(25)
+        .lean();
 
-      return { success: true, users };
+      // Exact id first, then ids that start with the query, then the rest.
+      const needle = query.toLowerCase();
+      const rank = (u) => {
+        const name = u.username.toLowerCase();
+        return name === needle ? 0 : name.startsWith(needle) ? 1 : 2;
+      };
+      const users = found.sort((a, b) => rank(a) - rank(b)).slice(0, 10);
+
+      const blockedByYou = new Set((req.user.blockedUsers || []).map(String));
+      return {
+        success: true,
+        users: users.map((u) => ({
+          ...u,
+          isBlockedByYou: blockedByYou.has(u._id.toString()),
+        })),
+      };
     } catch (error) {
-      req.log.error({ error, query: req.query.q }, "Search users error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در جستجوی کاربران",
-      });
+      return fail(req, reply, error, "خطا در جستجوی کاربران");
     }
   });
 
   fastify.put("/profile", auth, async (req, reply) => {
     try {
       const { error, value } = updateProfileSchema.validate(req.body);
-
       if (error) {
-        return reply.status(400).send({
-          success: false,
-          message: error.details[0].message,
-        });
+        return reply
+          .status(400)
+          .send({ success: false, message: error.details[0].message });
       }
 
-      if (value.username) {
-        const taken = await isUsernameTaken(value.username, req.user._id);
-
-        if (taken) {
-          return reply.status(400).send({
-            success: false,
-            message: USERNAME_TAKEN,
-          });
-        }
+      if (value.username && (await isUsernameTaken(value.username, req.user._id))) {
+        return reply.status(400).send({ success: false, message: USERNAME_TAKEN });
       }
 
       const updatedUser = await User.findByIdAndUpdate(
         req.user._id,
         { $set: value },
-        { new: true, runValidators: true },
+        { returnDocument: "after", runValidators: true },
       ).select("-password");
 
       return { success: true, user: updatedUser };
     } catch (error) {
-      req.log.error({ error, userId: req.user._id }, "Profile update error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در به‌روزرسانی پروفایل",
-      });
+      if (error.code === 11000) {
+        return reply.status(400).send({ success: false, message: EMAIL_TAKEN });
+      }
+      return fail(req, reply, error, "خطا در به‌روزرسانی پروفایل");
     }
   });
 
-  fastify.get("/:id/posts", async (req, reply) => {
+  fastify.get("/:id/posts", auth, async (req, reply) => {
     try {
+      assertValidId(req.params.id);
+      const { page, limit, skip } = pagination(req.query, 50, 100);
+
       const posts = await Post.find({ author: req.params.id })
         .sort({ createdAt: -1 })
-        .populate("author", "username")
+        .skip(skip)
+        .limit(limit)
+        .populate("author", PUBLIC_USER_FIELDS)
         .lean();
 
-      return { success: true, posts: formatPosts(posts) };
+      return {
+        success: true,
+        posts: posts.map((post) => ({
+          ...withViewerLikes(post, req.user._id),
+          commentsCount: post.comments?.length || 0,
+        })),
+        page,
+        hasMore: posts.length === limit,
+      };
     } catch (error) {
-      req.log.error({ error, userId: req.params.id }, "Get posts error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در دریافت پست‌ها",
-      });
+      return fail(req, reply, error, "خطا در دریافت پست‌ها");
     }
   });
 
   fastify.post("/:id/follow", auth, async (req, reply) => {
     try {
       const targetId = req.params.id;
-      const currentUserId = req.user._id;
+      assertValidId(targetId);
+      assertNotSelf(req.user._id, targetId);
 
-      ensureNotSelf(currentUserId, targetId);
+      const targetUser = await findUserById(targetId, "blockedUsers");
+      if ((targetUser.blockedUsers || []).some((id) => sameId(id, req.user._id))) {
+        throw httpError(BLOCKED_BY_USER, 403);
+      }
 
-      const [targetUser, currentUser] = await Promise.all([
-        findUserById(targetId, "blockedUsers followers"),
-        User.findById(currentUserId).select("following"),
-      ]);
-
-      ensureNotBlocked(targetUser, currentUserId);
-
-      const isFollowing = currentUser.following.includes(targetId);
-
-      const updateCurrent = isFollowing
-        ? { $pull: { following: targetId } }
-        : { $push: { following: targetId } };
-
-      const updateTarget = isFollowing
-        ? { $pull: { followers: currentUserId } }
-        : { $push: { followers: currentUserId } };
+      const isFollowing = req.user.following.some((id) => sameId(id, targetId));
+      const op = isFollowing ? "$pull" : "$addToSet";
 
       await Promise.all([
-        User.findByIdAndUpdate(currentUserId, updateCurrent),
-        User.findByIdAndUpdate(targetId, updateTarget),
+        User.updateOne({ _id: req.user._id }, { [op]: { following: targetId } }),
+        User.updateOne({ _id: targetId }, { [op]: { followers: req.user._id } }),
       ]);
 
-      const newFollowersCount = isFollowing
-        ? targetUser.followers.length - 1
-        : targetUser.followers.length + 1;
+      const { followers } = await User.findById(targetId).select("followers").lean();
+      const followersCount = followers.length;
 
-      if (!isFollowing) {
-        await sendNotification(
-          fastify,
-          targetUser._id,
-          currentUserId,
-          "follow",
-          {
-            message: "شما را دنبال کرد",
-          },
-        );
-
-        fastify.io?.to(`user:${targetId}`).emit("user:followed", {
-          followerId: currentUserId,
-          followerUsername: req.user.username,
-          followersCount: newFollowersCount,
+      if (isFollowing) {
+        fastify.io?.to(`user:${targetId}`).emit("user:unfollowed", {
+          followerId: req.user._id,
+          followersCount,
         });
       } else {
-        fastify.io?.to(`user:${targetId}`).emit("user:unfollowed", {
-          followerId: currentUserId,
-          followersCount: newFollowersCount,
+        await sendNotification(fastify, targetId, req.user._id, "follow", {
+          message: "شما را دنبال کرد",
+        });
+        fastify.io?.to(`user:${targetId}`).emit("user:followed", {
+          followerId: req.user._id,
+          followerUsername: req.user.username,
+          followersCount,
         });
       }
 
-      return {
-        success: true,
-        following: !isFollowing,
-        followersCount: newFollowersCount,
-      };
+      return { success: true, following: !isFollowing, followersCount };
     } catch (error) {
-      req.log.error({ error, targetId: req.params.id }, "Follow error");
-      return reply.status(error.statusCode || 500).send({
-        success: false,
-        message: error.message || "خطا",
-      });
+      return fail(req, reply, error, "خطا");
     }
   });
 
   fastify.post("/:id/block", auth, async (req, reply) => {
     try {
       const targetId = req.params.id;
-      const currentUserId = req.user._id;
+      assertValidId(targetId);
+      assertNotSelf(req.user._id, targetId);
+      await findUserById(targetId, "_id");
 
-      ensureNotSelf(currentUserId, targetId);
-
-      const [targetUser, currentUser] = await Promise.all([
-        findUserById(targetId, "followers"),
-        User.findById(currentUserId).select("blockedUsers following"),
-      ]);
-
-      const isBlocked = currentUser.blockedUsers.includes(targetId);
+      const isBlocked = req.user.blockedUsers.some((id) => sameId(id, targetId));
 
       if (isBlocked) {
-        await User.findByIdAndUpdate(currentUserId, {
-          $pull: { blockedUsers: targetId },
-        });
+        await User.updateOne({ _id: req.user._id }, { $pull: { blockedUsers: targetId } });
       } else {
         await Promise.all([
-          User.findByIdAndUpdate(currentUserId, {
-            $push: { blockedUsers: targetId },
-            $pull: { following: targetId },
-          }),
-          User.findByIdAndUpdate(targetId, {
-            $pull: { followers: currentUserId },
-          }),
+          User.updateOne(
+            { _id: req.user._id },
+            { $addToSet: { blockedUsers: targetId }, $pull: { following: targetId } },
+          ),
+          User.updateOne({ _id: targetId }, { $pull: { followers: req.user._id } }),
         ]);
       }
 
+      fastify.io
+        ?.to(`user:${targetId}`)
+        .emit(isBlocked ? "user:unblocked" : "user:blocked", {
+          userId: req.user._id.toString(),
+        });
+
       return { success: true, blocked: !isBlocked };
     } catch (error) {
-      req.log.error({ error, targetId: req.params.id }, "Block error");
-      return reply.status(error.statusCode || 500).send({
-        success: false,
-        message: error.message || "خطا",
-      });
+      return fail(req, reply, error, "خطا");
     }
   });
 
-  fastify.get("/:id/followers", async (req, reply) => {
+  const listRelation = (field) => async (req, reply) => {
     try {
-      const { page = 1, limit = 20 } = req.query;
-      const skip = (page - 1) * limit;
+      assertValidId(req.params.id);
+      const { page, limit, skip } = pagination(req.query, 20, 50);
 
-      const user = await User.findById(req.params.id)
-        .select("followers")
-        .populate({
-          path: "followers",
-          select: "username",
-          options: {
-            skip,
-            limit: parseInt(limit),
-            sort: { createdAt: -1 },
-          },
-        });
+      // Slice the id array in the database and only load that page of users.
+      const doc = await User.findById(req.params.id)
+        .select({ _id: 1, [field]: { $slice: [skip, limit] } })
+        .populate({ path: field, select: PUBLIC_USER_FIELDS })
+        .lean();
+      if (!doc) throw httpError(USER_NOT_FOUND, 404);
 
-      if (!user) {
-        return reply.status(404).send({
-          success: false,
-          message: USER_NOT_FOUND,
-        });
-      }
-
-      const totalFollowers = await User.findById(req.params.id).select(
-        "followers",
-      );
-
-      const totalCount = totalFollowers?.followers?.length || 0;
-      const hasMore = skip + user.followers.length < totalCount;
+      const [{ total }] = await User.aggregate([
+        { $match: { _id: doc._id } },
+        { $project: { total: { $size: { $ifNull: [`$${field}`, []] } } } },
+      ]);
+      const hasMore = skip + doc[field].length < total;
 
       return {
         success: true,
-        followers: user.followers,
+        [field]: doc[field],
         hasMore,
         nextPage: hasMore ? page + 1 : null,
-        total: totalCount,
+        total,
       };
     } catch (error) {
-      req.log.error({ error, userId: req.params.id }, "Get followers error");
-      return reply.status(error.statusCode || 500).send({
-        success: false,
-        message: error.message || "خطا",
-      });
+      return fail(req, reply, error, "خطا");
     }
-  });
+  };
 
-  fastify.get("/:id/following", async (req, reply) => {
-    try {
-      const { page = 1, limit = 20 } = req.query;
-      const skip = (page - 1) * limit;
-
-      const user = await User.findById(req.params.id)
-        .select("following")
-        .populate({
-          path: "following",
-          select: "username",
-          options: {
-            skip,
-            limit: parseInt(limit),
-            sort: { createdAt: -1 },
-          },
-        });
-
-      if (!user) {
-        return reply.status(404).send({
-          success: false,
-          message: USER_NOT_FOUND,
-        });
-      }
-
-      const totalFollowing = await User.findById(req.params.id).select(
-        "following",
-      );
-
-      const totalCount = totalFollowing?.following?.length || 0;
-      const hasMore = skip + user.following.length < totalCount;
-
-      return {
-        success: true,
-        following: user.following,
-        hasMore,
-        nextPage: hasMore ? page + 1 : null,
-        total: totalCount,
-      };
-    } catch (error) {
-      req.log.error({ error, userId: req.params.id }, "Get following error");
-      return reply.status(error.statusCode || 500).send({
-        success: false,
-        message: error.message || "خطا",
-      });
-    }
-  });
+  fastify.get("/:id/followers", auth, listRelation("followers"));
+  fastify.get("/:id/following", auth, listRelation("following"));
 
   fastify.get("/:id/info", auth, async (req, reply) => {
     try {
-      const user = await User.findById(req.params.id).select("username");
-
-      if (!user) {
-        return reply.status(404).send({
-          success: false,
-          message: USER_NOT_FOUND,
-        });
-      }
-
+      assertValidId(req.params.id);
+      const user = await findUserById(req.params.id, PUBLIC_USER_FIELDS);
       return { success: true, data: { user } };
     } catch (error) {
-      req.log.error({ error, userId: req.params.id }, "Get user info error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در دریافت اطلاعات کاربر",
-      });
+      return fail(req, reply, error, "خطا در دریافت اطلاعات کاربر");
     }
   });
 };
