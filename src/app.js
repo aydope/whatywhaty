@@ -8,6 +8,28 @@ const User = require("./models/User");
 
 const isProduction = process.env.NODE_ENV === "production";
 
+const requiredSecrets = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "COOKIE_SECRET"];
+
+const assertEnvironment = () => {
+  const missing = ["MONGODB_URI", ...requiredSecrets].filter(
+    (name) => !process.env[name],
+  );
+  if (missing.length) {
+    throw new Error(`Missing environment variables: ${missing.join(", ")}`);
+  }
+
+  if (isProduction) {
+    const weak = requiredSecrets.filter((name) => process.env[name].length < 32);
+    if (weak.length) {
+      throw new Error(`Secrets shorter than 32 characters: ${weak.join(", ")}`);
+    }
+  }
+};
+
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
+  : null;
+
 const fastify = Fastify({
   logger: isProduction
     ? true
@@ -26,53 +48,54 @@ const fastify = Fastify({
   bodyLimit: 1024 * 10,
   connectionTimeout: 30000,
   keepAliveTimeout: 60000,
-  maxParamLength: 1000,
+  routerOptions: { maxParamLength: 1000 },
 });
 
 const registerPlugins = async () => {
   await fastify.register(require("@fastify/cors"), {
-    origin: process.env.CORS_ORIGIN?.split(",") || true,
+    origin: allowedOrigins || !isProduction,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     credentials: true,
   });
 
   await fastify.register(require("@fastify/helmet"), {
-    contentSecurityPolicy: false,
-    hsts: false,
+    // Pages still rely on inline scripts and CDN assets, so script and style
+    // sources are not restricted yet. The remaining directives block
+    // clickjacking, <base> injection, plugins and form hijacking.
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["*", "data:", "blob:", "'unsafe-inline'", "'unsafe-eval'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+        formAction: ["'self'"],
+      },
+    },
+    hsts: isProduction ? { maxAge: 15552000 } : false,
   });
+
+  await fastify.register(require("@fastify/compress"), { threshold: 1024 });
 
   await fastify.register(require("@fastify/rate-limit"), {
     max: 3000,
     timeWindow: "10 minute",
-    keyGenerator: (req) => {
-      const ip =
-        req.headers["x-forwarded-for"] ||
-        req.ip ||
-        req.connection.remoteAddress;
-      const userAgent = req.headers["user-agent"] || "";
-      return `${ip}:${userAgent.substring(0, 20)}`;
-    },
-    skip: (req) =>
-      req.ip === "127.0.0.1" ||
-      req.url.startsWith("/public/") ||
-      req.url === "/health" ||
-      req.url.startsWith("/socket.io/"),
+    // With trustProxy enabled req.ip is already the client address, whereas
+    // the raw X-Forwarded-For header can be set to anything by the client.
+    keyGenerator: (req) => req.ip,
+    allowList: (req) =>
+      req.url.startsWith("/public/") || req.url === "/health",
     errorResponseBuilder: (req, context) => ({
+      statusCode: 429,
       success: false,
-      message: "Too many requests. Please try again later.",
+      message: "تعداد درخواست‌ها بیش از حد مجاز است. کمی بعد دوباره تلاش کنید",
       retryAfter: context.after,
     }),
   });
 
   await fastify.register(require("@fastify/cookie"), {
     secret: process.env.COOKIE_SECRET,
-    parseOptions: {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "lax",
-      path: "/",
-    },
   });
 
   await fastify.register(require("@fastify/formbody"));
@@ -80,7 +103,7 @@ const registerPlugins = async () => {
   await fastify.register(require("@fastify/static"), {
     root: path.join(__dirname, "../public"),
     prefix: "/public/",
-    cache: isProduction ? { maxAge: 86400000 } : false,
+    maxAge: isProduction ? "1h" : 0,
   });
 
   await fastify.register(require("@fastify/view"), {
@@ -89,6 +112,29 @@ const registerPlugins = async () => {
     layout: false,
     includeViewExtension: true,
     options: { cache: isProduction },
+  });
+
+  // Cookies are SameSite=Lax already; this also rejects state-changing
+  // requests that a browser tagged with a foreign Origin.
+  fastify.addHook("onRequest", async (req, reply) => {
+    if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return;
+
+    const origin = req.headers.origin;
+    if (!origin) return;
+
+    let host;
+    try {
+      host = new URL(origin).host;
+    } catch {
+      host = null;
+    }
+
+    if (host === req.headers.host || allowedOrigins?.includes(origin)) return;
+
+    return reply.status(403).send({
+      success: false,
+      message: "درخواست از مبدا نامعتبر ارسال شده است",
+    });
   });
 
   const plugins = [
@@ -108,42 +154,44 @@ const registerPlugins = async () => {
     await fastify.register(require(pluginPath), options);
   }
 
-  fastify.get(
-    "/",
-    { preHandler: [fastify.authenticate] },
-    async (req, reply) => {
-      return reply.view("home.ejs", { user: req.user });
-    },
-  );
-
-  fastify.get(
-    "/explore",
-    { preHandler: [fastify.authenticate] },
-    async (req, reply) => reply.view("explore.ejs", { user: req.user }),
-  );
-
   const auth = { preHandler: [fastify.authenticate] };
 
-  const sendError = (reply, statusCode, message) =>
-    reply.status(statusCode).send({ success: false, message });
+  fastify.get("/health", async () => ({ status: "ok" }));
 
-  const findUserByUsername = async (username, select = "") => {
-    const user = await User.findOne({ username }).select(select);
-    if (!user) {
-      const error = new Error(USER_NOT_FOUND);
-      error.statusCode = 404;
-      throw error;
-    }
-    return user;
-  };
+  fastify.get("/", auth, async (req, reply) =>
+    reply.view("home.ejs", { user: req.user }),
+  );
+
+  fastify.get("/explore", auth, async (req, reply) =>
+    reply.view("explore.ejs", { user: req.user }),
+  );
 
   fastify.get("/@:username", auth, async (req, reply) => {
     try {
-      const user = await findUserByUsername(req.params.username);
-      const isBlocked = user.blockedUsers?.includes(req.user._id) || false;
+      const isOwnProfile =
+        req.user.username.toLowerCase() === req.params.username.toLowerCase();
+
+      // Email and the block list belong to the account owner only.
+      const profileUser = isOwnProfile
+        ? req.user
+        : await User.findOne({ username: req.params.username })
+            .collation({ locale: "en", strength: 2 })
+            .select("-email -blockedUsers")
+            .lean();
+
+      if (!profileUser) {
+        return reply.status(404).view("404.ejs", { user: req.user });
+      }
+
+      const isBlocked = isOwnProfile
+        ? false
+        : !!(await User.exists({
+            _id: profileUser._id,
+            blockedUsers: req.user._id,
+          }));
 
       return reply.view("profile.ejs", {
-        profileUser: user,
+        profileUser,
         currentUser: req.user,
         isBlocked,
       });
@@ -152,18 +200,24 @@ const registerPlugins = async () => {
         { err: error, username: req.params.username },
         "Profile view error",
       );
-      return sendError(reply, error.statusCode || 500, error.message);
+      return reply
+        .status(500)
+        .send({ success: false, message: "خطا در بارگذاری پروفایل" });
     }
   });
 };
 
 fastify.setErrorHandler((error, request, reply) => {
-  request.log.error({
-    err: error,
-    url: request.url,
-    method: request.method,
-    ip: request.ip,
-  });
+  const statusCode = error.statusCode || 500;
+
+  if (statusCode >= 500) {
+    request.log.error({
+      err: error,
+      url: request.url,
+      method: request.method,
+      ip: request.ip,
+    });
+  }
 
   if (error.validation) {
     return reply.status(400).send({
@@ -176,21 +230,22 @@ fastify.setErrorHandler((error, request, reply) => {
     });
   }
 
-  const statusMessages = {
-    429: "Too many requests",
-    401: "Unauthorized",
-    404: "Not found",
-  };
-
-  const message = statusMessages[error.statusCode];
-  if (message) {
-    return reply.status(error.statusCode).send({
+  if (statusCode === 429) {
+    return reply.status(429).send({
       success: false,
-      message,
+      message: error.message,
+      retryAfter: error.retryAfter,
     });
   }
 
-  return reply.status(error.statusCode || 500).send({
+  if (statusCode < 500) {
+    return reply.status(statusCode).send({
+      success: false,
+      message: statusCode === 404 ? "یافت نشد" : "درخواست نامعتبر است",
+    });
+  }
+
+  return reply.status(statusCode).send({
     success: false,
     message: isProduction ? "Internal Server Error" : error.message,
     ...(isProduction ? {} : { stack: error.stack }),
@@ -204,7 +259,7 @@ fastify.setNotFoundHandler(async (req, reply) => {
       message: "این صفحه وجود نداره",
     });
   }
-  return reply.view("404.ejs", { user: req.user || null });
+  return reply.status(404).view("404.ejs", { user: null });
 });
 
 const connectDB = async () => {
@@ -221,41 +276,32 @@ const connectDB = async () => {
   }
 };
 
-const shutdown = async (signal) => {
-  console.log(`\n${signal} received. Shutting down...`);
+let shuttingDown = false;
 
-  const forceShutdownTimeout = setTimeout(() => {
+const shutdown = async (signal, exitCode = 0) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  fastify.log.info(`${signal} received, shutting down`);
+
+  const forceExit = setTimeout(() => {
     fastify.log.error("Forced shutdown after 10s timeout");
     process.exit(1);
   }, 10000);
-
-  forceShutdownTimeout.unref();
+  forceExit.unref();
 
   try {
-    await Promise.allSettled([
-      fastify.close(),
-      mongoose.connection.close(),
-      fastify.redis?.quit(),
-    ]);
-
-    fastify.log.info("Shutdown complete");
-    process.exit(0);
+    // Closing fastify also runs the Redis and Socket.IO onClose hooks.
+    await fastify.close();
+    await mongoose.connection.close();
+    process.exit(exitCode);
   } catch (error) {
     fastify.log.error(`Shutdown error: ${error.message}`);
-
-    try {
-      fastify.redis?.disconnect();
-    } catch (redisError) {
-      fastify.log.error(`Redis disconnect error: ${redisError.message}`);
-    }
-
     process.exit(1);
-  } finally {
-    clearTimeout(forceShutdownTimeout);
   }
 };
 
 const start = async () => {
+  assertEnvironment();
   await connectDB();
   await registerPlugins();
   await fastify.listen({
@@ -264,20 +310,19 @@ const start = async () => {
   });
 };
 
-const handleShutdownSignal = (signal) => {
+["SIGTERM", "SIGINT"].forEach((signal) => {
   process.on(signal, () => shutdown(signal));
-};
+});
 
-["SIGTERM", "SIGINT"].forEach(handleShutdownSignal);
-
+// A rejected promise is logged and the process keeps serving; only a truly
+// uncaught exception, where state may be corrupt, restarts the process.
 process.on("unhandledRejection", (error) => {
   fastify.log.error({ err: error }, "Unhandled rejection");
-  shutdown("UNHANDLED_REJECTION");
 });
 
 process.on("uncaughtException", (error) => {
   fastify.log.error({ err: error }, "Uncaught exception");
-  shutdown("UNCAUGHT_EXCEPTION");
+  shutdown("UNCAUGHT_EXCEPTION", 1);
 });
 
 start().catch((error) => {
