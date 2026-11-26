@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { cleanDisplayName, cleanBio } = require("../utils/text");
 const validator = require("validator");
 const bcrypt = require("bcrypt");
 
@@ -15,9 +16,6 @@ const userSchema = new mongoose.Schema(
         /^[a-zA-Z0-9_]+$/,
         "نام کاربری فقط می‌تواند شامل حروف انگلیسی، اعداد و خط‌تیره باشد",
       ],
-      set: function (value) {
-        return value.trim();
-      },
     },
     email: {
       type: String,
@@ -38,10 +36,34 @@ const userSchema = new mongoose.Schema(
       minlength: [6, "رمز عبور باید حداقل ۶ کاراکتر باشد"],
       select: false,
     },
-    refreshToken: {
+    displayName: {
       type: String,
-      default: null,
+      default: "",
+      maxlength: [50, "نام نمایشی نمی‌تواند بیشتر از ۵۰ کاراکتر باشد"],
+      set: cleanDisplayName,
+    },
+    bio: {
+      type: String,
+      default: "",
+      maxlength: [160, "بیو نمی‌تواند بیشتر از ۱۶۰ کاراکتر باشد"],
+      set: cleanBio,
+    },
+    sessions: {
+      type: [
+        {
+          _id: false,
+          hash: { type: String, required: true },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
       select: false,
+    },
+    // Bumped whenever the password changes; tokens carry the version they were
+    // issued for, so older access tokens stop working immediately.
+    tokenVersion: {
+      type: Number,
+      default: 0,
     },
     role: {
       type: String,
@@ -101,7 +123,6 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ username: "text" });
-userSchema.index({ email: 1 });
 
 userSchema.pre("save", async function () {
   if (this.username) {
@@ -113,6 +134,7 @@ userSchema.pre("save", async function () {
   if (this.isModified("password")) {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
+    if (!this.isNew) this.tokenVersion += 1;
   }
 });
 
@@ -127,13 +149,16 @@ userSchema.pre("findOneAndUpdate", async function () {
   if (update.password) {
     const salt = await bcrypt.genSalt(12);
     update.password = await bcrypt.hash(update.password, salt);
+    update.$inc = { ...(update.$inc || {}), tokenVersion: 1 };
   }
 });
 
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
-  delete obj.refreshToken;
+  delete obj.sessions;
+  delete obj.resetPasswordToken;
+  delete obj.resetPasswordExpires;
   delete obj.__v;
   return obj;
 };

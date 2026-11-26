@@ -1,6 +1,8 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/User");
 const crypto = require("crypto");
+const { isUsernameTaken } = require("../utils/usernames");
+const { sendPasswordResetEmail } = require("../services/mailer");
 const {
   registerSchema,
   loginSchema,
@@ -27,39 +29,16 @@ const MSG = {
   SERVER_ERROR: "خطایی رخ داد. لطفاً دوباره تلاش کنید",
 };
 
-const ACCESS_MAX_AGE = 15 * 60;
-const REFRESH_MAX_AGE = 7 * 24 * 60 * 60;
-const RESET_TOKEN_EXPIRY = 60 * 5;
+const RESET_TOKEN_EXPIRY = 60 * 30;
 
-const setCookies = (reply, accessToken, refreshToken) => {
-  const secure = process.env.NODE_ENV === "production";
-  const base = { httpOnly: true, secure, sameSite: "lax", path: "/" };
+// Compared against when the email is unknown so both failures take the same time.
+const DUMMY_HASH = bcrypt.hashSync("dummy-password", 12);
 
-  reply.setCookie("accessToken", accessToken, {
-    ...base,
-    maxAge: ACCESS_MAX_AGE,
-  });
+const limit = (max, timeWindow) => ({
+  config: { rateLimit: { max, timeWindow } },
+});
 
-  reply.setCookie("refreshToken", refreshToken, {
-    ...base,
-    maxAge: REFRESH_MAX_AGE,
-  });
-};
-
-const clearCookies = (reply) => {
-  reply.clearCookie("accessToken", { path: "/" });
-  reply.clearCookie("refreshToken", { path: "/" });
-};
-
-const blacklistToken = async (fastify, token) => {
-  if (!token) return;
-
-  try {
-    await fastify.redis.set(`blacklist:${token}`, "1", "EX", REFRESH_MAX_AGE);
-  } catch (error) {
-    fastify.log.error({ error }, "Token blacklist error");
-  }
-};
+const isDuplicateKey = (error) => error?.code === 11000;
 
 const validateRequest = (schema, body) => {
   const { error, value } = schema.validate(body, {
@@ -76,35 +55,36 @@ const validateRequest = (schema, body) => {
   return value;
 };
 
-const saveRefreshToken = async (userId, tokenHash) => {
-  try {
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { refreshToken: tokenHash },
-      { returnDocument: "after", runValidators: true },
-    ).select("refreshToken");
-
-    return user?.refreshToken === tokenHash;
-  } catch (error) {
-    return false;
-  }
-};
-
 const redirectIfAuthenticated = async (req, reply) => {
-  try {
-    const token = req.cookies?.accessToken;
-    if (!token) return;
+  const decoded = await req.server.verifyAccessToken(req.cookies?.accessToken);
+  if (!decoded || decoded.expired) return;
 
-    const decoded = await req.server.verifyAccessToken(token);
-    if (decoded && !decoded.expired) {
-      return reply.redirect("/");
-    }
-  } catch (error) {}
+  const exists = await User.exists({ _id: decoded.userId });
+  if (exists) return reply.redirect("/");
 };
 
 module.exports = async function (fastify) {
   const authRequired = { preHandler: [fastify.authenticate] };
   const guestOnly = { preHandler: [redirectIfAuthenticated] };
+
+  const startSession = async (reply, userId, version = 0) => {
+    const tokens = fastify.generateTokens(userId, version);
+    await fastify.addSession(userId, tokens.refreshTokenHash);
+    fastify.setAuthCookies(reply, tokens.accessToken, tokens.refreshToken);
+  };
+
+  const sendFailure = (req, reply, error, label) => {
+    if (error.statusCode === 400) {
+      return reply
+        .status(400)
+        .send({ success: false, message: error.message });
+    }
+
+    req.log.error({ err: error }, label);
+    return reply
+      .status(500)
+      .send({ success: false, message: MSG.SERVER_ERROR });
+  };
 
   fastify.get("/register", guestOnly, (req, reply) => {
     return reply.view("auth/register.ejs", {
@@ -113,31 +93,28 @@ module.exports = async function (fastify) {
     });
   });
 
-  fastify.post("/register", async (req, reply) => {
+  fastify.post("/register", limit(10, "1 hour"), async (req, reply) => {
     try {
-      const { username, email, password } = validateRequest(
+      const { username, displayName, email, password } = validateRequest(
         registerSchema,
         req.body,
       );
 
-      const userExists = await User.findOne({
-        $or: [{ email }, { username }],
-      })
-        .select("_id")
-        .lean();
-
-      if (userExists) {
-        return reply.status(409).send({
-          success: false,
-          message: MSG.USER_EXISTS,
-        });
+      const exists =
+        (await User.exists({ email })) || (await isUsernameTaken(username));
+      if (exists) {
+        return reply
+          .status(409)
+          .send({ success: false, message: MSG.USER_EXISTS });
       }
 
-      const user = await User.create({ username, email, password });
-      const tokens = fastify.generateTokens(user._id);
-
-      await saveRefreshToken(user._id, tokens.refreshTokenHash);
-      setCookies(reply, tokens.accessToken, tokens.refreshToken);
+      const user = await User.create({
+        username,
+        displayName: displayName || "",
+        email,
+        password,
+      });
+      await startSession(reply, user._id);
 
       return reply.status(201).send({
         success: true,
@@ -145,18 +122,12 @@ module.exports = async function (fastify) {
         redirect: "/",
       });
     } catch (error) {
-      if (error.statusCode === 400) {
-        return reply.status(400).send({
-          success: false,
-          message: error.message,
-        });
+      if (isDuplicateKey(error)) {
+        return reply
+          .status(409)
+          .send({ success: false, message: MSG.USER_EXISTS });
       }
-
-      fastify.log.error({ error }, "Register error");
-      return reply.status(500).send({
-        success: false,
-        message: MSG.SERVER_ERROR,
-      });
+      return sendFailure(req, reply, error, "Register error");
     }
   });
 
@@ -167,31 +138,25 @@ module.exports = async function (fastify) {
     });
   });
 
-  fastify.post("/login", async (req, reply) => {
+  fastify.post("/login", limit(10, "15 minutes"), async (req, reply) => {
     try {
       const { email, password } = validateRequest(loginSchema, req.body);
 
-      const user = await User.findOne({ email }).select("password").lean();
+      const user = await User.findOne({ email })
+        .select("password tokenVersion")
+        .lean();
+      const isPasswordValid = await bcrypt.compare(
+        password,
+        user?.password || DUMMY_HASH,
+      );
 
-      if (!user) {
-        return reply.status(401).send({
-          success: false,
-          message: MSG.INVALID_CREDENTIALS,
-        });
+      if (!user || !isPasswordValid) {
+        return reply
+          .status(401)
+          .send({ success: false, message: MSG.INVALID_CREDENTIALS });
       }
 
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-
-      if (!isPasswordValid) {
-        return reply.status(401).send({
-          success: false,
-          message: MSG.INVALID_CREDENTIALS,
-        });
-      }
-
-      const tokens = fastify.generateTokens(user._id);
-      await saveRefreshToken(user._id, tokens.refreshTokenHash);
-      setCookies(reply, tokens.accessToken, tokens.refreshToken);
+      await startSession(reply, user._id, user.tokenVersion);
 
       return reply.status(200).send({
         success: true,
@@ -199,278 +164,204 @@ module.exports = async function (fastify) {
         redirect: "/",
       });
     } catch (error) {
-      if (error.statusCode === 400) {
-        return reply.status(400).send({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      fastify.log.error({ error }, "Login error");
-      return reply.status(500).send({
-        success: false,
-        message: MSG.SERVER_ERROR,
-      });
+      return sendFailure(req, reply, error, "Login error");
     }
   });
 
-  fastify.post("/refresh", async (req, reply) => {
+  fastify.post("/refresh", limit(60, "1 minute"), async (req, reply) => {
     try {
       const refreshToken = req.cookies?.refreshToken;
 
       if (!refreshToken) {
-        return reply.status(401).send({
-          success: false,
-          message: MSG.REFRESH_REQUIRED,
-        });
+        return reply
+          .status(401)
+          .send({ success: false, message: MSG.REFRESH_REQUIRED });
       }
 
       const decoded = await fastify.verifyRefreshToken(refreshToken);
 
       if (!decoded || decoded.expired) {
-        clearCookies(reply);
-        const message = decoded?.expired
-          ? MSG.REFRESH_EXPIRED
-          : MSG.REFRESH_INVALID;
-
+        fastify.clearAuthCookies(reply);
         return reply.status(401).send({
           success: false,
-          message,
+          message: decoded?.expired ? MSG.REFRESH_EXPIRED : MSG.REFRESH_INVALID,
         });
       }
 
-      const tokens = fastify.generateTokens(decoded.userId);
-      const saved = await saveRefreshToken(
+      const { accessToken } = fastify.generateTokens(
         decoded.userId,
-        tokens.refreshTokenHash,
+        decoded.version,
       );
+      fastify.setAuthCookies(reply, accessToken);
 
-      if (!saved) {
-        clearCookies(reply);
-        return reply.status(500).send({
-          success: false,
-          message: MSG.SERVER_ERROR,
-        });
-      }
-
-      setCookies(reply, tokens.accessToken, tokens.refreshToken);
-
-      return reply.status(200).send({
-        success: true,
-        accessToken: tokens.accessToken,
-      });
+      return reply.status(200).send({ success: true, accessToken });
     } catch (error) {
-      fastify.log.error({ error }, "Refresh token error");
-      return reply.status(500).send({
-        success: false,
-        message: MSG.SERVER_ERROR,
-      });
+      return sendFailure(req, reply, error, "Refresh token error");
     }
   });
 
   fastify.post("/logout", authRequired, async (req, reply) => {
     try {
-      const refreshToken = req.cookies?.refreshToken;
+      const { accessToken, refreshToken } = req.cookies || {};
 
+      await fastify.blacklistAccessToken(accessToken);
       if (refreshToken) {
-        await blacklistToken(fastify, refreshToken);
-        await User.updateOne(
-          { _id: req.user?._id },
-          { refreshToken: null },
-        ).catch(() => {});
+        const hash = crypto
+          .createHash("sha256")
+          .update(refreshToken)
+          .digest("hex");
+        await fastify.removeSession(req.user._id, hash);
       }
 
-      clearCookies(reply);
-
-      return reply.status(200).send({
-        success: true,
-        message: MSG.LOGOUT_SUCCESS,
-      });
+      fastify.clearAuthCookies(reply);
+      return reply
+        .status(200)
+        .send({ success: true, message: MSG.LOGOUT_SUCCESS });
     } catch (error) {
-      fastify.log.error({ error }, "Logout error");
-      return reply.status(500).send({
-        success: false,
-        message: MSG.SERVER_ERROR,
-      });
+      return sendFailure(req, reply, error, "Logout error");
     }
   });
 
-  fastify.put("/change-password", authRequired, async (req, reply) => {
-    try {
-      const { currentPassword, newPassword } = validateRequest(
-        changePasswordSchema,
-        req.body,
-      );
+  fastify.put(
+    "/change-password",
+    { ...authRequired, ...limit(10, "15 minutes") },
+    async (req, reply) => {
+      try {
+        const { currentPassword, newPassword } = validateRequest(
+          changePasswordSchema,
+          req.body,
+        );
 
-      const user = await User.findById(req.user._id).select("+password");
-      const isPasswordValid = await user.comparePassword(currentPassword);
+        const user = await User.findById(req.user._id).select("+password");
+        if (!(await user.comparePassword(currentPassword))) {
+          return reply
+            .status(400)
+            .send({ success: false, message: MSG.PASSWORD_INCORRECT });
+        }
 
-      if (!isPasswordValid) {
-        return reply.status(400).send({
-          success: false,
-          message: MSG.PASSWORD_INCORRECT,
-        });
+        user.password = newPassword;
+        user.sessions = [];
+        await user.save();
+
+        // Every other device is signed out; this one gets a fresh session.
+        await fastify.blacklistAccessToken(req.cookies?.accessToken);
+        await startSession(reply, user._id, user.tokenVersion);
+
+        return reply
+          .status(200)
+          .send({ success: true, message: MSG.PASSWORD_CHANGED });
+      } catch (error) {
+        return sendFailure(req, reply, error, "Change password error");
       }
+    },
+  );
 
-      user.password = newPassword;
-      await user.save();
+  fastify.post(
+    "/forgot-password",
+    limit(5, "1 hour"),
+    async (req, reply) => {
+      try {
+        const { email } = validateRequest(forgotPasswordSchema, req.body);
+        const user = await User.findOne({ email }).select("_id email username");
 
-      return reply.status(200).send({
-        success: true,
-        message: MSG.PASSWORD_CHANGED,
-      });
-    } catch (error) {
-      if (error.statusCode === 400) {
-        return reply.status(400).send({
-          success: false,
-          message: error.message,
-        });
+        if (user) {
+          const resetToken = crypto.randomBytes(32).toString("hex");
+          user.resetPasswordToken = crypto
+            .createHash("sha256")
+            .update(resetToken)
+            .digest("hex");
+          user.resetPasswordExpires = Date.now() + RESET_TOKEN_EXPIRY * 1000;
+          await user.save();
+
+          const base =
+            process.env.APP_URL || `${req.protocol}://${req.headers.host}`;
+          await sendPasswordResetEmail(fastify, {
+            to: user.email,
+            username: user.username,
+            link: `${base}/auth/reset-password?token=${resetToken}`,
+          }).catch((error) =>
+            req.log.error({ err: error }, "Password reset email failed"),
+          );
+        }
+
+        // The same answer is returned whether or not the email exists, and the
+        // reset link is only ever delivered by email.
+        return reply
+          .status(200)
+          .send({ success: true, message: MSG.RESET_EMAIL_SENT });
+      } catch (error) {
+        return sendFailure(req, reply, error, "Forgot password error");
       }
-
-      fastify.log.error({ error }, "Change password error");
-      return reply.status(500).send({
-        success: false,
-        message: MSG.SERVER_ERROR,
-      });
-    }
-  });
-
-  fastify.post("/forgot-password", async (req, reply) => {
-    try {
-      const { email } = validateRequest(forgotPasswordSchema, req.body);
-
-      const user = await User.findOne({ email }).select("_id email username");
-
-      if (!user) {
-        return reply.status(200).send({
-          success: true,
-          message: MSG.RESET_EMAIL_SENT,
-        });
-      }
-
-      const resetToken = crypto.randomBytes(32).toString("hex");
-      const resetTokenHash = crypto
-        .createHash("sha256")
-        .update(resetToken)
-        .digest("hex");
-
-      user.resetPasswordToken = resetTokenHash;
-      user.resetPasswordExpires = Date.now() + RESET_TOKEN_EXPIRY * 1000;
-      await user.save();
-
-      return reply.status(200).send({
-        success: true,
-        message: MSG.RESET_EMAIL_SENT,
-        redirect: `/auth/reset-password?token=${resetToken}`,
-      });
-    } catch (error) {
-      if (error.statusCode === 400) {
-        return reply.status(400).send({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      fastify.log.error({ error }, "Forgot password error");
-      return reply.status(500).send({
-        success: false,
-        message: MSG.SERVER_ERROR,
-      });
-    }
-  });
+    },
+  );
 
   fastify.get("/reset-password", async (req, reply) => {
-    try {
-      const { token } = req.query;
-
-      if (!token && req.user) return reply.redirect("/");
-      if (!token) return reply.redirect("/auth/login");
-
-      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-
-      const user = await User.findOne({
-        resetPasswordToken: tokenHash,
-        resetPasswordExpires: { $gt: Date.now() },
-      }).select("_id");
-
-      if (!user) {
-        return reply.view("auth/reset-password.ejs", {
-          title: "بازنشانی رمز · واتی‌واتی",
-          token: null,
-          error: MSG.RESET_INVALID,
-        });
-      }
-
-      return reply.view("auth/reset-password.ejs", {
+    const view = (token, error) =>
+      reply.view("auth/reset-password.ejs", {
         title: "بازنشانی رمز · واتی‌واتی",
         token,
-        error: null,
+        error,
       });
-    } catch (error) {
-      fastify.log.error({ error }, "Reset password page error");
 
-      return reply.view("auth/reset-password.ejs", {
-        title: "بازنشانی رمز · واتی‌واتی",
-        token: null,
-        error: "خطایی رخ داد. لطفاً دوباره تلاش کنید",
-      });
-    }
-  });
-
-  fastify.post("/reset-password", async (req, reply) => {
     try {
-      const { token, password } = validateRequest(
-        resetPasswordSchema,
-        req.body,
-      );
+      const { token } = req.query;
+      if (typeof token !== "string" || !token) {
+        return reply.redirect("/auth/login");
+      }
 
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-
-      const user = await User.findOne({
+      const valid = await User.exists({
         resetPasswordToken: tokenHash,
         resetPasswordExpires: { $gt: Date.now() },
-      }).select("+resetPasswordToken +resetPasswordExpires");
-
-      if (!user) {
-        return reply.status(400).send({
-          success: false,
-          message: MSG.RESET_INVALID,
-        });
-      }
-
-      user.password = password;
-      user.resetPasswordToken = undefined;
-      user.resetPasswordExpires = undefined;
-      user.refreshToken = null;
-      await user.save();
-
-      await fastify.redis.set(
-        `user:${user._id}:logout`,
-        "1",
-        "EX",
-        REFRESH_MAX_AGE,
-      );
-
-      clearCookies(reply);
-
-      return reply.status(200).send({
-        success: true,
-        message: MSG.RESET_SUCCESS,
-        redirect: "/auth/login",
       });
+
+      return valid ? view(token, null) : view(null, MSG.RESET_INVALID);
     } catch (error) {
-      if (error.statusCode === 400) {
-        return reply.status(400).send({
-          success: false,
-          message: error.message,
-        });
-      }
-
-      fastify.log.error({ error }, "Reset password error");
-      return reply.status(500).send({
-        success: false,
-        message: MSG.SERVER_ERROR,
-      });
+      req.log.error({ err: error }, "Reset password page error");
+      return view(null, MSG.SERVER_ERROR);
     }
   });
+
+  fastify.post(
+    "/reset-password",
+    limit(10, "1 hour"),
+    async (req, reply) => {
+      try {
+        const { token, password } = validateRequest(
+          resetPasswordSchema,
+          req.body,
+        );
+        const tokenHash = crypto
+          .createHash("sha256")
+          .update(token)
+          .digest("hex");
+
+        const user = await User.findOne({
+          resetPasswordToken: tokenHash,
+          resetPasswordExpires: { $gt: Date.now() },
+        }).select("+resetPasswordToken +resetPasswordExpires +sessions");
+
+        if (!user) {
+          return reply
+            .status(400)
+            .send({ success: false, message: MSG.RESET_INVALID });
+        }
+
+        user.password = password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+        user.sessions = [];
+        await user.save();
+
+        fastify.clearAuthCookies(reply);
+        return reply.status(200).send({
+          success: true,
+          message: MSG.RESET_SUCCESS,
+          redirect: "/auth/login",
+        });
+      } catch (error) {
+        return sendFailure(req, reply, error, "Reset password error");
+      }
+    },
+  );
 };

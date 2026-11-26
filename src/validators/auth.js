@@ -11,6 +11,10 @@ const registerSchema = Joi.object({
     "string.empty": "نام کاربری نمی‌تواند خالی باشد",
   }),
 
+  displayName: Joi.string().trim().max(50).allow("").messages({
+    "string.max": "نام نمایشی نمی‌تواند بیشتر از ۵۰ کاراکتر باشد",
+  }),
+
   email: Joi.string().email({ minDomainSegments: 2 }).required().messages({
     "string.email": "لطفاً یک آدرس ایمیل معتبر وارد کنید",
     "any.required": "وارد کردن ایمیل الزامی است",

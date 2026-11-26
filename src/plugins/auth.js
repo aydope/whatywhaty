@@ -1,37 +1,110 @@
 const fp = require("fastify-plugin");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const User = require("../models/User");
 
-module.exports = fp(async (fastify, opts) => {
-  const ACCESS_MAX_AGE = 15 * 60;
-  const REFRESH_MAX_AGE = 7 * 24 * 60 * 60;
-  const USER_SELECT = "-password -refreshToken";
+const REFRESH_MAX_AGE = 7 * 24 * 60 * 60;
+const MAX_SESSIONS = 5;
+const USER_SELECT = "-password";
 
-  fastify.decorate("generateTokens", (userId) => {
+const sha256 = (value) =>
+  crypto.createHash("sha256").update(value).digest("hex");
+
+module.exports = fp(async (fastify) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  const cookieBase = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: "lax",
+    path: "/",
+  };
+
+  const redisReady = () => fastify.redis?.status === "ready";
+
+  fastify.decorate("generateTokens", (userId, version = 0) => {
     const accessToken = jwt.sign(
-      { userId: userId.toString() },
+      { userId: userId.toString(), v: version },
       process.env.JWT_ACCESS_SECRET,
       { expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "15m" },
     );
     const refreshToken = jwt.sign(
-      { userId: userId.toString() },
+      { userId: userId.toString(), v: version },
       process.env.JWT_REFRESH_SECRET,
       { expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "7d" },
     );
-    const refreshTokenHash = crypto
-      .createHash("sha256")
-      .update(refreshToken)
-      .digest("hex");
 
-    return { accessToken, refreshToken, refreshTokenHash };
+    return { accessToken, refreshToken, refreshTokenHash: sha256(refreshToken) };
   });
+
+  // The access cookie lives as long as the refresh cookie on purpose: once the
+  // JWT inside it expires the server still receives it and can renew it.
+  fastify.decorate("setAuthCookies", (reply, accessToken, refreshToken) => {
+    reply.setCookie("accessToken", accessToken, {
+      ...cookieBase,
+      maxAge: REFRESH_MAX_AGE,
+    });
+    if (refreshToken) {
+      reply.setCookie("refreshToken", refreshToken, {
+        ...cookieBase,
+        maxAge: REFRESH_MAX_AGE,
+      });
+    }
+  });
+
+  fastify.decorate("clearAuthCookies", (reply) => {
+    reply.clearCookie("accessToken", cookieBase);
+    reply.clearCookie("refreshToken", cookieBase);
+  });
+
+  fastify.decorate("addSession", async (userId, hash) => {
+    await User.updateOne(
+      { _id: userId },
+      {
+        $push: {
+          sessions: { $each: [{ hash, createdAt: new Date() }], $slice: -MAX_SESSIONS },
+        },
+      },
+    );
+  });
+
+  fastify.decorate("removeSession", (userId, hash) =>
+    User.updateOne({ _id: userId }, { $pull: { sessions: { hash } } }),
+  );
+
+  fastify.decorate("revokeAllSessions", (userId) =>
+    User.updateOne({ _id: userId }, { $set: { sessions: [] } }),
+  );
+
+  // Access tokens revoked at logout are kept in Redis until they expire. The
+  // lookup is best effort: when Redis is down the token is still accepted.
+  fastify.decorate("blacklistAccessToken", async (token) => {
+    if (!token || !redisReady()) return;
+    try {
+      const { exp } = jwt.decode(token) || {};
+      const ttl = exp ? exp - Math.floor(Date.now() / 1000) : 900;
+      if (ttl > 0) await fastify.redis.set(`revoked:${sha256(token)}`, "1", "EX", ttl);
+    } catch (error) {
+      fastify.log.warn({ err: error }, "Could not revoke access token");
+    }
+  });
+
+  const isRevoked = async (token) => {
+    if (!redisReady()) return false;
+    try {
+      return !!(await fastify.redis.get(`revoked:${sha256(token)}`));
+    } catch (error) {
+      fastify.log.warn({ err: error }, "Revocation lookup failed");
+      return false;
+    }
+  };
 
   fastify.decorate("verifyAccessToken", async (token) => {
     if (!token) return null;
     try {
-      const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-      const blacklisted = await fastify.redis.get(`blacklist:${token}`);
-      return blacklisted ? null : decoded;
+      const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET, {
+        algorithms: ["HS256"],
+      });
+      return (await isRevoked(token)) ? null : decoded;
     } catch (err) {
       return err.name === "TokenExpiredError" ? { expired: true } : null;
     }
@@ -40,41 +113,23 @@ module.exports = fp(async (fastify, opts) => {
   fastify.decorate("verifyRefreshToken", async (token) => {
     if (!token) return null;
     try {
-      const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-
-      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-      const User = require("../models/User");
-      const user = await User.findById(decoded.userId).select("refreshToken");
-
-      if (!user) return null;
-      if (!user.refreshToken) return null;
-      if (user.refreshToken !== tokenHash) return null;
-
-      return { userId: decoded.userId };
+      const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET, {
+        algorithms: ["HS256"],
+      });
+      const owner = await User.findOne({
+        _id: decoded.userId,
+        "sessions.hash": sha256(token),
+      })
+        .select("tokenVersion")
+        .lean();
+      return owner
+        ? { userId: decoded.userId, version: owner.tokenVersion || 0 }
+        : null;
     } catch (err) {
       if (err.name === "TokenExpiredError") return { expired: true };
       return null;
     }
   });
-
-  const setAuthCookies = (reply, accessToken, refreshToken) => {
-    const isProduction = process.env.NODE_ENV === "production";
-    const base = {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "lax",
-      path: "/",
-    };
-
-    reply.setCookie("accessToken", accessToken, {
-      ...base,
-      maxAge: ACCESS_MAX_AGE,
-    });
-    reply.setCookie("refreshToken", refreshToken, {
-      ...base,
-      maxAge: REFRESH_MAX_AGE,
-    });
-  };
 
   const isApiRequest = (req) =>
     req.headers.accept?.includes("application/json") ||
@@ -92,49 +147,40 @@ module.exports = fp(async (fastify, opts) => {
     return reply.redirect("/auth/login");
   };
 
+  const getToken = (req) =>
+    req.cookies?.accessToken ||
+    req.headers.authorization?.replace(/^Bearer /, "");
+
+  const issuedForOldPassword = (decoded, user) =>
+    (decoded.v || 0) !== (user.tokenVersion || 0);
+
+  const loadUser = async (decoded) => {
+    const user = await User.findById(decoded.userId).select(USER_SELECT);
+    if (!user || issuedForOldPassword(decoded, user)) return null;
+    return user;
+  };
+
+  // Renews the access token from the refresh cookie. The refresh token itself
+  // is not rotated, so parallel requests cannot invalidate each other.
+  const refreshFromCookie = async (req, reply) => {
+    const refreshToken = req.cookies?.refreshToken;
+    const refreshed = await fastify.verifyRefreshToken(refreshToken);
+    if (!refreshed || refreshed.expired) return null;
+
+    const user = await User.findById(refreshed.userId).select(USER_SELECT);
+    if (!user) return null;
+
+    const { accessToken } = fastify.generateTokens(user._id, user.tokenVersion);
+    fastify.setAuthCookies(reply, accessToken);
+    return user;
+  };
+
   fastify.decorate("authenticate", async (req, reply) => {
     try {
-      const token =
-        req.cookies?.accessToken ||
-        req.headers.authorization?.replace("Bearer ", "");
+      const decoded = await fastify.verifyAccessToken(getToken(req));
+      let user = decoded && !decoded.expired ? await loadUser(decoded) : null;
 
-      if (!token) return sendUnauthorized(req, reply);
-
-      const decoded = await fastify.verifyAccessToken(token);
-      if (!decoded) return sendUnauthorized(req, reply);
-
-      if (decoded.expired) {
-        const refreshToken = req.cookies?.refreshToken;
-        if (!refreshToken) return sendUnauthorized(req, reply);
-
-        const refreshDecoded = await fastify.verifyRefreshToken(refreshToken);
-        if (!refreshDecoded || refreshDecoded.expired)
-          return sendUnauthorized(req, reply);
-
-        const User = require("../models/User");
-        const user = await User.findById(refreshDecoded.userId).select(
-          USER_SELECT,
-        );
-        if (!user) return sendUnauthorized(req, reply);
-
-        const tokens = fastify.generateTokens(user._id);
-        user.refreshToken = tokens.refreshTokenHash;
-        await user.save();
-
-        await fastify.redis.set(
-          `blacklist:${refreshToken}`,
-          "1",
-          "EX",
-          REFRESH_MAX_AGE,
-        );
-        setAuthCookies(reply, tokens.accessToken, tokens.refreshToken);
-
-        req.user = user;
-        return;
-      }
-
-      const User = require("../models/User");
-      const user = await User.findById(decoded.userId).select(USER_SELECT);
+      if (!user) user = await refreshFromCookie(req, reply);
       if (!user) return sendUnauthorized(req, reply);
 
       req.user = user;
@@ -146,19 +192,11 @@ module.exports = fp(async (fastify, opts) => {
 
   fastify.decorate("authenticateSilent", async (req) => {
     try {
-      const token =
-        req.cookies?.accessToken ||
-        req.headers.authorization?.replace("Bearer ", "");
-      if (!token) return null;
-
-      const decoded = await fastify.verifyAccessToken(token);
+      const decoded = await fastify.verifyAccessToken(getToken(req));
       if (!decoded || decoded.expired) return null;
 
-      const User = require("../models/User");
-      const user = await User.findById(decoded.userId).select(USER_SELECT);
-      if (!user) return null;
-
-      req.user = user;
+      const user = await loadUser(decoded);
+      if (user) req.user = user;
       return user;
     } catch {
       return null;
@@ -167,6 +205,8 @@ module.exports = fp(async (fastify, opts) => {
 
   fastify.decorate("authenticateAdmin", async (req, reply) => {
     await fastify.authenticate(req, reply);
+    if (reply.sent) return reply;
+
     if (req.user?.role !== "admin") {
       if (isApiRequest(req)) {
         return reply.status(403).send({
@@ -180,11 +220,7 @@ module.exports = fp(async (fastify, opts) => {
   });
 
   fastify.decorate("isAuthenticated", async (req) => {
-    try {
-      await fastify.authenticateSilent(req);
-      return !!req.user;
-    } catch {
-      return false;
-    }
+    await fastify.authenticateSilent(req);
+    return !!req.user;
   });
 });
