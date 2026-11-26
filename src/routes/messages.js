@@ -1,490 +1,242 @@
-const Message = require("../models/Message");
+const Joi = require("joi");
 const User = require("../models/User");
-const mongoose = require("mongoose");
-const { sendNotification } = require("../services/notificationService");
+const { isObjectId, sameId } = require("../utils/ids");
+const messages = require("../services/messageService");
 
-const isValidObjectId = (id) => id && mongoose.Types.ObjectId.isValid(id);
+const sendSchema = Joi.object({
+  content: Joi.string().trim().min(1).max(1000).required().messages({
+    "string.base": "متن پیام نامعتبر است",
+    "string.empty": "متن پیام نمی‌تواند خالی باشد",
+    "string.max": "پیام نمی‌تواند بیشتر از 1000 کاراکتر باشد",
+    "any.required": "متن پیام نمی‌تواند خالی باشد",
+  }),
+  replyTo: Joi.string().hex().length(24).allow(null, ""),
+});
 
-const getUserOnlineStatus = async (fastify, userId) => {
-  const onlineUsers = (await fastify.redis.hgetall("online_users")) || {};
-  return !!onlineUsers[userId?.toString()];
+const pageQuerySchema = Joi.object({
+  before: Joi.string().hex().length(24),
+  after: Joi.string().hex().length(24),
+  around: Joi.string().hex().length(24),
+  limit: Joi.number().integer().min(1).max(50).default(30),
+}).oxor("before", "after", "around");
+
+const rateLimit = (max, timeWindow) => ({
+  config: { rateLimit: { max, timeWindow } },
+});
+
+// A conversation can be addressed by user id or by "@username".
+const resolvePeerId = async (param) => {
+  if (isObjectId(param)) return param;
+
+  const name = param.replace(/^@/, "");
+  if (!/^[A-Za-z0-9]{3,30}$/.test(name)) return null;
+
+  const user = await User.findOne({ username: name })
+    .collation({ locale: "en", strength: 2 })
+    .select("_id")
+    .lean();
+  return user ? user._id.toString() : null;
 };
 
-const emitToUser = (fastify, userId, event, data) => {
-  fastify.io?.to(`user:${userId}`).emit(event, data);
-};
-
-module.exports = async function (fastify, opts) {
+module.exports = async function (fastify) {
   const auth = { preHandler: [fastify.authenticate] };
 
-  fastify.get("/", auth, async (req, reply) => {
-    const preselectedUser = req.query.user || null;
+  const fail = (req, reply, error, fallback) => {
+    if (error.statusCode && error.statusCode < 500) {
+      return reply
+        .status(error.statusCode)
+        .send({ success: false, message: error.message });
+    }
+    req.log.error({ err: error }, fallback);
+    return reply.status(500).send({ success: false, message: fallback });
+  };
 
-    return reply.view("messages.ejs", {
+  const requireObjectId = (reply, id) => {
+    if (isObjectId(id)) return true;
+    reply
+      .status(400)
+      .send({ success: false, message: "شناسه نامعتبر است" });
+    return false;
+  };
+
+  const renderChat = async (req, reply, target) =>
+    reply.view("messages.ejs", {
       user: req.user,
-      preselectedUser,
+      preselectedUser: (target && (await resolvePeerId(target))) || "",
       title: "پیام‌ها",
     });
-  });
+
+  fastify.get("/", auth, (req, reply) =>
+    renderChat(req, reply, typeof req.query.user === "string" ? req.query.user : ""),
+  );
+
 
   fastify.get("/conversations", auth, async (req, reply) => {
     try {
-      const userId = req.user._id;
-
-      const conversations = await Message.aggregate([
-        {
-          $match: {
-            $or: [{ sender: userId }, { recipient: userId }],
-          },
-        },
-        { $sort: { createdAt: -1 } },
-        {
-          $group: {
-            _id: {
-              $cond: [{ $eq: ["$sender", userId] }, "$recipient", "$sender"],
-            },
-            lastMessage: { $first: "$$ROOT" },
-            unreadCount: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ["$recipient", userId] },
-                      { $eq: ["$isRead", false] },
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-          },
-        },
-        { $sort: { "lastMessage.createdAt": -1 } },
-        {
-          $lookup: {
-            from: "users",
-            localField: "_id",
-            foreignField: "_id",
-            as: "user",
-          },
-        },
-        { $unwind: "$user" },
-        {
-          $project: {
-            "user._id": 1,
-            "user.username": 1,
-            lastMessage: {
-              _id: 1,
-              content: 1,
-              createdAt: 1,
-              isRead: 1,
-              type: 1,
-              sender: 1,
-            },
-            unreadCount: 1,
-          },
-        },
-      ]);
-
-      const onlineUsers = (await fastify.redis.hgetall("online_users")) || {};
-
-      const conversationsWithStatus = conversations.map((conv) => ({
-        ...conv,
-        user: {
-          ...conv.user,
-          isOnline: !!onlineUsers[conv.user._id.toString()],
-        },
-      }));
-
-      return reply.status(200).send({
-        success: true,
-        conversations: conversationsWithStatus,
-      });
+      const conversations = await messages.listConversations(fastify, req.user);
+      return { success: true, conversations };
     } catch (error) {
-      req.log.error({ error, userId: req.user._id }, "Get conversations error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در دریافت لیست گفتگوها",
-      });
-    }
-  });
-
-  fastify.get("/:userId", auth, async (req, reply) => {
-    try {
-      const { userId } = req.params;
-      const currentUserId = req.user._id;
-
-      if (!isValidObjectId(userId)) {
-        return reply.status(400).send({
-          success: false,
-          message: "شناسه کاربر نامعتبر است",
-        });
-      }
-
-      const recipient = await User.findById(userId).select(
-        "username blockedUsers isBlocked",
-      );
-
-      if (!recipient) {
-        return reply.status(404).send({
-          success: false,
-          message: "کاربر مورد نظر یافت نشد",
-        });
-      }
-
-      if (recipient.isBlocked) {
-        return reply.status(403).send({
-          success: false,
-          message: "این کاربر مسدود شده است",
-        });
-      }
-
-      if (recipient.blockedUsers?.includes(currentUserId)) {
-        return reply.status(403).send({
-          success: false,
-          message: "شما توسط این کاربر بلاک شده‌اید",
-        });
-      }
-
-      const page = Math.max(1, parseInt(req.query.page) || 1);
-      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
-      const skip = (page - 1) * limit;
-
-      const filter = {
-        $or: [
-          {
-            sender: currentUserId,
-            recipient: userId,
-            deletedForSender: { $ne: true },
-          },
-          {
-            sender: userId,
-            recipient: currentUserId,
-            deletedForRecipient: { $ne: true },
-          },
-        ],
-      };
-
-      const [messages, total] = await Promise.all([
-        Message.find(filter)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .populate("sender", "username")
-          .populate("recipient", "username")
-          .lean(),
-        Message.countDocuments(filter),
-      ]);
-
-      const isOnline = await getUserOnlineStatus(fastify, userId);
-
-      return reply.status(200).send({
-        success: true,
-        messages: messages.reverse(),
-        recipient: {
-          _id: recipient._id,
-          username: recipient.username,
-          isOnline,
-        },
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-          hasMore: page < Math.ceil(total / limit),
-        },
-      });
-    } catch (error) {
-      req.log.error({ error, userId: req.params.userId }, "Get messages error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در دریافت پیام‌ها",
-      });
-    }
-  });
-
-  fastify.post("/:userId", auth, async (req, reply) => {
-    try {
-      const { userId } = req.params;
-      const { content, type = "text" } = req.body;
-      const currentUserId = req.user._id;
-
-      if (!isValidObjectId(userId)) {
-        return reply.status(400).send({
-          success: false,
-          message: "شناسه کاربر نامعتبر است",
-        });
-      }
-
-      if (!content || content.trim().length === 0) {
-        return reply.status(400).send({
-          success: false,
-          message: "متن پیام نمی‌تواند خالی باشد",
-        });
-      }
-
-      if (content.length > 1000) {
-        return reply.status(400).send({
-          success: false,
-          message: "پیام نمی‌تواند بیشتر از 1000 کاراکتر باشد",
-        });
-      }
-
-      const recipient = await User.findById(userId).select(
-        "username blockedUsers isBlocked",
-      );
-
-      if (!recipient) {
-        return reply.status(404).send({
-          success: false,
-          message: "کاربر مورد نظر یافت نشد",
-        });
-      }
-
-      if (recipient.isBlocked) {
-        return reply.status(403).send({
-          success: false,
-          message: "این کاربر مسدود شده است",
-        });
-      }
-
-      if (recipient.blockedUsers?.includes(currentUserId)) {
-        return reply.status(403).send({
-          success: false,
-          message: "شما توسط این کاربر بلاک شده‌اید",
-        });
-      }
-
-      const message = await Message.create({
-        sender: currentUserId,
-        recipient: userId,
-        content: content.trim(),
-        type,
-        isRead: false,
-      });
-
-      const populatedMessage = await Message.findById(message._id)
-        .populate("sender", "username")
-        .populate("recipient", "username");
-
-      emitToUser(fastify, userId, "message:new", populatedMessage);
-      emitToUser(fastify, userId, "notification:new", {
-        type: "message",
-        from: currentUserId,
-        message: populatedMessage,
-      });
-      emitToUser(fastify, currentUserId, "message:sent", populatedMessage);
-
-      const unreadCount = await Message.countDocuments({
-        recipient: userId,
-        isRead: false,
-      });
-
-      emitToUser(fastify, userId, "messages:unread_count", {
-        count: unreadCount,
-      });
-
-      await sendNotification(fastify, userId, currentUserId, "message", {
-        message: "به شما پیام داد",
-      });
-
-      return reply.status(200).send({
-        success: true,
-        message: populatedMessage,
-      });
-    } catch (error) {
-      req.log.error({ error, userId: req.params.userId }, "Send message error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در ارسال پیام",
-      });
-    }
-  });
-
-  fastify.put("/:messageId/read", auth, async (req, reply) => {
-    try {
-      const { messageId } = req.params;
-      const currentUserId = req.user._id;
-
-      const message = await Message.findOne({
-        _id: messageId,
-        recipient: currentUserId,
-      });
-
-      if (!message) {
-        return reply.status(404).send({
-          success: false,
-          message: "پیام مورد نظر یافت نشد",
-        });
-      }
-
-      if (!message.isRead) {
-        message.isRead = true;
-        message.readAt = new Date();
-        await message.save();
-
-        emitToUser(fastify, message.sender, "message:read", {
-          messageId,
-          recipientId: currentUserId,
-        });
-      }
-
-      const unreadCount = await Message.countDocuments({
-        recipient: currentUserId,
-        isRead: false,
-      });
-
-      emitToUser(fastify, currentUserId, "messages:unread_count", {
-        count: unreadCount,
-      });
-
-      return reply.status(200).send({
-        success: true,
-        message: "پیام با موفقیت خوانده شد",
-      });
-    } catch (error) {
-      req.log.error(
-        { error, messageId: req.params.messageId },
-        "Mark message read error",
-      );
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در علامت‌گذاری پیام",
-      });
-    }
-  });
-
-  fastify.put("/:userId/read-all", auth, async (req, reply) => {
-    try {
-      const { userId } = req.params;
-      const currentUserId = req.user._id;
-
-      await Message.updateMany(
-        { sender: userId, recipient: currentUserId, isRead: false },
-        { $set: { isRead: true, readAt: new Date() } },
-      );
-
-      const unreadCount = await Message.countDocuments({
-        recipient: currentUserId,
-        isRead: false,
-      });
-
-      emitToUser(fastify, currentUserId, "messages:unread_count", {
-        count: unreadCount,
-      });
-      emitToUser(fastify, userId, "messages:read", { userId: currentUserId });
-
-      return reply.status(200).send({
-        success: true,
-        message: "همه پیام‌ها با موفقیت خوانده شدند",
-      });
-    } catch (error) {
-      req.log.error(
-        { error, userId: req.params.userId },
-        "Mark all messages read error",
-      );
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در علامت‌گذاری پیام‌ها",
-      });
+      return fail(req, reply, error, "خطا در دریافت لیست گفتگوها");
     }
   });
 
   fastify.get("/unread/count", auth, async (req, reply) => {
     try {
-      const count = await Message.countDocuments({
-        recipient: req.user._id,
-        isRead: false,
-      });
-
-      return reply.status(200).send({
-        success: true,
-        count,
-      });
+      return { success: true, count: await messages.unreadTotal(req.user._id) };
     } catch (error) {
-      req.log.error({ error, userId: req.user._id }, "Get unread count error");
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در دریافت تعداد پیام‌های خوانده نشده",
-      });
+      return fail(req, reply, error, "خطا در دریافت تعداد پیام‌های خوانده نشده");
     }
   });
 
-  fastify.delete("/:messageId", auth, async (req, reply) => {
+  fastify.get("/:id", auth, async (req, reply) => {
     try {
-      const { messageId } = req.params;
-      const currentUserId = req.user._id;
-      const { forBoth = false } = req.body;
-
-      const message = await Message.findById(messageId);
-
-      if (!message) {
-        return reply.status(404).send({
-          success: false,
-          message: "پیام مورد نظر یافت نشد",
-        });
+      // A browser opening /messages/@alice gets the chat page; the page's own
+      // requests ask for JSON and get the history.
+      const wantsJson = (req.headers.accept || "").includes("application/json");
+      if (req.params.id.startsWith("@") && !wantsJson) {
+        return renderChat(req, reply, req.params.id);
       }
 
-      const isSender = message.sender.toString() === currentUserId.toString();
-      const isRecipient =
-        message.recipient.toString() === currentUserId.toString();
-
-      if (!isSender && !isRecipient) {
-        return reply.status(403).send({
-          success: false,
-          message: "شما اجازه حذف این پیام را ندارید",
-        });
+      const peerId = await resolvePeerId(req.params.id);
+      if (!peerId) {
+        return reply
+          .status(404)
+          .send({ success: false, message: "کاربر مورد نظر یافت نشد" });
       }
 
-      if (isSender) {
-        if (forBoth) {
-          await Message.findByIdAndDelete(messageId);
-          emitToUser(fastify, message.recipient, "message:deleted", {
-            messageId,
-            deletedBy: currentUserId,
-            forBoth: true,
-          });
-        } else {
-          message.deletedForSender = true;
-          await message.save();
-        }
-      } else if (isRecipient) {
-        if (forBoth) {
-          await Message.findByIdAndDelete(messageId);
-          emitToUser(fastify, message.sender, "message:deleted", {
-            messageId,
-            deletedBy: currentUserId,
-            forBoth: true,
-          });
-        } else {
-          message.deletedForRecipient = true;
-          await message.save();
-        }
-      }
-
-      emitToUser(fastify, currentUserId, "message:deleted:self", {
-        messageId,
-        forBoth,
+      const { error, value: query } = pageQuerySchema.validate(req.query, {
+        stripUnknown: true,
       });
+      if (error) {
+        return reply
+          .status(400)
+          .send({ success: false, message: "پارامترهای صفحه‌بندی نامعتبر است" });
+      }
 
-      return reply.status(200).send({
-        success: true,
-        message: forBoth
-          ? "پیام برای هر دو طرف حذف شد"
-          : "پیام برای شما حذف شد",
-        messageId,
-        forBoth,
-      });
-    } catch (error) {
-      req.log.error(
-        { error, messageId: req.params.messageId },
-        "Delete message error",
+      const peer = await User.findById(peerId).select("username displayName blockedUsers").lean();
+      if (!peer) {
+        return reply
+          .status(404)
+          .send({ success: false, message: "کاربر مورد نظر یافت نشد" });
+      }
+
+      const isBlockedByThem = (peer.blockedUsers || []).some((id) =>
+        sameId(id, req.user._id),
       );
-      return reply.status(500).send({
-        success: false,
-        message: "خطا در حذف پیام",
+      if (isBlockedByThem) {
+        return reply
+          .status(403)
+          .send({ success: false, message: "شما توسط این کاربر بلاک شده‌اید" });
+      }
+
+      const isFirstPage = !query.before && !query.after && !query.around;
+      const [page, pinned] = await Promise.all([
+        messages.listMessages(req.user._id, peerId, query),
+        isFirstPage ? messages.listPinned(req.user._id, peerId) : null,
+      ]);
+
+      return {
+        success: true,
+        ...page,
+        ...(pinned ? { pinned } : {}),
+        recipient: {
+          _id: peer._id,
+          username: peer.username,
+          displayName: peer.displayName || "",
+          isOnline: !!fastify.isUserOnline?.(peerId),
+          isBlockedByThem: false,
+          isBlockedByYou: (req.user.blockedUsers || []).some((id) =>
+            sameId(id, peerId),
+          ),
+        },
+      };
+    } catch (error) {
+      return fail(req, reply, error, "خطا در دریافت پیام‌ها");
+    }
+  });
+
+  fastify.post("/:id", { ...auth, ...rateLimit(120, "1 minute") }, async (req, reply) => {
+    try {
+      const recipientId = await resolvePeerId(req.params.id);
+      if (!recipientId) {
+        return reply
+          .status(404)
+          .send({ success: false, message: "کاربر مورد نظر یافت نشد" });
+      }
+
+      const { error, value } = sendSchema.validate(req.body || {}, {
+        stripUnknown: true,
       });
+      if (error) {
+        return reply
+          .status(400)
+          .send({ success: false, message: error.details[0].message });
+      }
+
+      const message = await messages.sendMessage(fastify, {
+        senderId: req.user._id,
+        recipientId,
+        content: value.content,
+        replyTo: value.replyTo || null,
+      });
+
+      return { success: true, message };
+    } catch (error) {
+      return fail(req, reply, error, "خطا در ارسال پیام");
+    }
+  });
+
+  fastify.put("/:id/read-all", auth, async (req, reply) => {
+    try {
+      if (!requireObjectId(reply, req.params.id)) return;
+      await messages.markConversationRead(fastify, req.user._id, req.params.id);
+      return { success: true, message: "همه پیام‌ها با موفقیت خوانده شدند" };
+    } catch (error) {
+      return fail(req, reply, error, "خطا در علامت‌گذاری پیام‌ها");
+    }
+  });
+
+  fastify.put("/:id/read", auth, async (req, reply) => {
+    try {
+      if (!requireObjectId(reply, req.params.id)) return;
+      await messages.markMessageRead(fastify, req.user._id, req.params.id);
+      return { success: true, message: "پیام با موفقیت خوانده شد" };
+    } catch (error) {
+      return fail(req, reply, error, "خطا در علامت‌گذاری پیام");
+    }
+  });
+
+  fastify.put("/:id/pin", auth, async (req, reply) => {
+    try {
+      if (!requireObjectId(reply, req.params.id)) return;
+      const pinned = req.body?.pinned !== false;
+      const result = await messages.setPinned(
+        fastify,
+        req.user._id,
+        req.params.id,
+        pinned,
+      );
+      return { success: true, ...result };
+    } catch (error) {
+      return fail(req, reply, error, "خطا در پین کردن پیام");
+    }
+  });
+
+  fastify.delete("/:id", auth, async (req, reply) => {
+    try {
+      if (!requireObjectId(reply, req.params.id)) return;
+      const forBoth = req.body?.forBoth === true || req.query.forBoth === "true";
+
+      await messages.deleteMessage(fastify, req.user._id, req.params.id, forBoth);
+
+      return {
+        success: true,
+        message: forBoth ? "پیام برای هر دو طرف حذف شد" : "پیام برای شما حذف شد",
+        messageId: req.params.id,
+        forBoth,
+      };
+    } catch (error) {
+      return fail(req, reply, error, "خطا در حذف پیام");
     }
   });
 };

@@ -1,29 +1,15 @@
 const mongoose = require("mongoose");
 
+const objectIdRef = (ref, required = false, message) => ({
+  type: mongoose.Schema.Types.ObjectId,
+  ref,
+  ...(required ? { required: [true, message] } : { default: null }),
+});
+
 const messageSchema = new mongoose.Schema(
   {
-    sender: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: [true, "فرستنده پیام الزامی است"],
-      validate: {
-        validator: function (value) {
-          return mongoose.Types.ObjectId.isValid(value);
-        },
-        message: "شناسه فرستنده نامعتبر است",
-      },
-    },
-    recipient: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: [true, "دریافت‌کننده پیام الزامی است"],
-      validate: {
-        validator: function (value) {
-          return mongoose.Types.ObjectId.isValid(value);
-        },
-        message: "شناسه دریافت‌کننده نامعتبر است",
-      },
-    },
+    sender: objectIdRef("User", true, "فرستنده پیام الزامی است"),
+    recipient: objectIdRef("User", true, "دریافت‌کننده پیام الزامی است"),
     content: {
       type: String,
       required: [true, "متن پیام الزامی است"],
@@ -36,6 +22,7 @@ const messageSchema = new mongoose.Schema(
       enum: ["text", "image", "file"],
       default: "text",
     },
+    replyTo: objectIdRef("Message"),
     isRead: {
       type: Boolean,
       default: false,
@@ -44,16 +31,20 @@ const messageSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    // ✅ اضافه کردن فیلدهای حذف
+    pinned: {
+      type: Boolean,
+      default: false,
+    },
+    pinnedAt: {
+      type: Date,
+      default: null,
+    },
+    pinnedBy: objectIdRef("User"),
     deletedForSender: {
       type: Boolean,
       default: false,
     },
     deletedForRecipient: {
-      type: Boolean,
-      default: false,
-    },
-    deleted: {
       type: Boolean,
       default: false,
     },
@@ -63,28 +54,18 @@ const messageSchema = new mongoose.Schema(
   },
 );
 
-// ایندکس‌ها
-messageSchema.index({ sender: 1, recipient: 1, createdAt: -1 });
-messageSchema.index({ recipient: 1, isRead: 1 });
-messageSchema.index({ createdAt: -1 });
+// Conversation pages are read by _id (monotonic with time), once per direction.
+messageSchema.index({ sender: 1, recipient: 1, _id: -1 });
+// Unread totals and per-sender unread counts.
+messageSchema.index({ recipient: 1, isRead: 1, sender: 1 });
+messageSchema.index(
+  { sender: 1, recipient: 1, pinnedAt: -1 },
+  { partialFilterExpression: { pinned: true } },
+);
 
-// Middleware
 messageSchema.pre("save", function () {
-  if (this.content) {
-    this.content = this.content.trim();
-  }
   if (this.isRead && !this.readAt) {
     this.readAt = new Date();
-  }
-});
-
-messageSchema.pre("findOneAndUpdate", function () {
-  const update = this.getUpdate();
-  if (update.content) {
-    update.content = update.content.trim();
-  }
-  if (update.isRead === true && !update.readAt) {
-    update.readAt = new Date();
   }
 });
 
