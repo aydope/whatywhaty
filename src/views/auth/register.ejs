@@ -409,14 +409,28 @@
 
       <form id="registerForm" class="mt-6">
         <div class="form-group">
+          <label class="form-label" for="displayName">
+            <i class="bi bi-person-badge ml-1"></i> نام نمایشی (اختیاری)
+          </label>
+          <input
+            type="text"
+            id="displayName"
+            class="form-input"
+            placeholder="مثلاً: علی رضایی"
+            maxlength="50"
+            autocomplete="name"
+          />
+        </div>
+
+        <div class="form-group">
           <label class="form-label" for="username">
-            <i class="bi bi-person ml-1"></i> نام کاربری
+            <i class="bi bi-at ml-1"></i> آیدی (نام کاربری)
           </label>
           <input
             type="text"
             id="username"
             class="form-input"
-            placeholder="نام کاربری خود را انتخاب کنید"
+            placeholder="آیدی یکتا، مثلاً ali123 (فقط حروف انگلیسی و عدد)"
             required
             minlength="3"
             maxlength="30"
@@ -548,6 +562,7 @@
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 username: username,
+                displayName: document.getElementById("displayName").value.trim(),
                 email: email,
                 password: password,
               }),
