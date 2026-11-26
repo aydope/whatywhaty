@@ -1,7 +1,11 @@
 const User = require("../models/User");
 const Post = require("../models/Post");
 const Comment = require("../models/Comment");
+const Message = require("../models/Message");
+const Notification = require("../models/Notification");
 const Joi = require("joi");
+const { deleteCommentTree } = require("../services/commentService");
+const { isObjectId } = require("../utils/ids");
 
 const USER_NOT_FOUND = "کاربر مورد نظر یافت نشد";
 const POST_NOT_FOUND = "پست مورد نظر یافت نشد";
@@ -27,7 +31,14 @@ const validatePagination = (query) => {
   return value;
 };
 
+const assertValidId = (id) => {
+  if (!isObjectId(id)) {
+    throw Object.assign(new Error("شناسه نامعتبر است"), { statusCode: 400 });
+  }
+};
+
 const findUserOrFail = async (id, select = "-password") => {
+  assertValidId(id);
   const user = await User.findById(id).select(select).lean();
   if (!user)
     throw Object.assign(new Error(USER_NOT_FOUND), { statusCode: 404 });
@@ -35,6 +46,7 @@ const findUserOrFail = async (id, select = "-password") => {
 };
 
 const findPostOrFail = async (id) => {
+  assertValidId(id);
   const post = await Post.findById(id);
   if (!post)
     throw Object.assign(new Error(POST_NOT_FOUND), { statusCode: 404 });
@@ -42,20 +54,45 @@ const findPostOrFail = async (id) => {
 };
 
 const findCommentOrFail = async (id) => {
+  assertValidId(id);
   const comment = await Comment.findById(id);
   if (!comment)
     throw Object.assign(new Error(COMMENT_NOT_FOUND), { statusCode: 404 });
   return comment;
 };
 
-const deleteCommentRecursive = async (commentId) => {
-  const replies = await Comment.find({ parentComment: commentId }).select(
-    "_id",
-  );
-  for (const reply of replies) {
-    await deleteCommentRecursive(reply._id);
+// Removes everything that points at a user so no dangling references remain.
+const purgeUser = async (user) => {
+  const userId = user._id;
+
+  const [ownPosts, ownComments] = await Promise.all([
+    Post.find({ author: userId }).select("_id").lean(),
+    Comment.find({ author: userId }),
+  ]);
+  const postIds = ownPosts.map((p) => p._id);
+
+  await Comment.deleteMany({ post: { $in: postIds } });
+  await Post.deleteMany({ _id: { $in: postIds } });
+
+  for (const comment of ownComments) {
+    // Skip comments already removed together with a parent or a post.
+    if (await Comment.exists({ _id: comment._id })) {
+      await deleteCommentTree(comment);
+    }
   }
-  await Comment.findByIdAndDelete(commentId);
+
+  await Promise.all([
+    Post.updateMany({ likes: userId }, { $pull: { likes: userId } }),
+    Comment.updateMany({ likes: userId }, { $pull: { likes: userId } }),
+    User.updateMany(
+      { $or: [{ followers: userId }, { following: userId }, { blockedUsers: userId }] },
+      { $pull: { followers: userId, following: userId, blockedUsers: userId } },
+    ),
+    Message.deleteMany({ $or: [{ sender: userId }, { recipient: userId }] }),
+    Notification.deleteMany({ $or: [{ sender: userId }, { recipient: userId }] }),
+  ]);
+
+  await User.deleteOne({ _id: userId });
 };
 
 module.exports = async function (fastify, opts) {
@@ -130,7 +167,7 @@ module.exports = async function (fastify, opts) {
       const [userPosts, userComments] = await Promise.all([
         Post.find({ author: user._id })
           .sort({ createdAt: -1 })
-          .select("content createdAt likesCount")
+          .select("content createdAt likes")
           .lean(),
         Comment.find({ author: user._id })
           .sort({ createdAt: -1 })
@@ -149,9 +186,9 @@ module.exports = async function (fastify, opts) {
         recentComments: userComments,
       };
     } catch (error) {
-      if (error.statusCode === 404) {
+      if (error.statusCode === 404 || error.statusCode === 400) {
         return reply
-          .status(404)
+          .status(error.statusCode)
           .send({ success: false, message: error.message });
       }
       req.log.error({ err: error, userId: req.params.id }, "Get user error");
@@ -171,11 +208,7 @@ module.exports = async function (fastify, opts) {
           .send({ success: false, message: CANNOT_DELETE_ADMIN });
       }
 
-      await Promise.all([
-        Post.deleteMany({ author: user._id }),
-        Comment.deleteMany({ author: user._id }),
-        User.findByIdAndDelete(user._id),
-      ]);
+      await purgeUser(user);
 
       fastify.io?.emit("user:deleted", { userId: req.params.id });
 
@@ -185,9 +218,9 @@ module.exports = async function (fastify, opts) {
       );
       return { success: true, message: USER_DELETED };
     } catch (error) {
-      if (error.statusCode === 404) {
+      if (error.statusCode === 404 || error.statusCode === 400) {
         return reply
-          .status(404)
+          .status(error.statusCode)
           .send({ success: false, message: error.message });
       }
       req.log.error({ err: error, userId: req.params.id }, "Delete user error");
@@ -252,9 +285,9 @@ module.exports = async function (fastify, opts) {
         commentCount: comments.length,
       };
     } catch (error) {
-      if (error.statusCode === 404) {
+      if (error.statusCode === 404 || error.statusCode === 400) {
         return reply
-          .status(404)
+          .status(error.statusCode)
           .send({ success: false, message: error.message });
       }
       req.log.error({ err: error, postId: req.params.id }, "Get post error");
@@ -268,11 +301,8 @@ module.exports = async function (fastify, opts) {
     try {
       const post = await findPostOrFail(req.params.id);
 
-      const comments = await Comment.find({ post: post._id }).select("_id");
-      for (const comment of comments) {
-        await deleteCommentRecursive(comment._id);
-      }
-      await Post.findByIdAndDelete(post._id);
+      await Comment.deleteMany({ post: post._id });
+      await Post.deleteOne({ _id: post._id });
 
       fastify.io?.emit("post:deleted", { postId: req.params.id });
 
@@ -282,9 +312,9 @@ module.exports = async function (fastify, opts) {
       );
       return { success: true, message: POST_DELETED };
     } catch (error) {
-      if (error.statusCode === 404) {
+      if (error.statusCode === 404 || error.statusCode === 400) {
         return reply
-          .status(404)
+          .status(error.statusCode)
           .send({ success: false, message: error.message });
       }
       req.log.error({ err: error, postId: req.params.id }, "Delete post error");
@@ -353,9 +383,9 @@ module.exports = async function (fastify, opts) {
         replyCount: replies.length,
       };
     } catch (error) {
-      if (error.statusCode === 404) {
+      if (error.statusCode === 404 || error.statusCode === 400) {
         return reply
-          .status(404)
+          .status(error.statusCode)
           .send({ success: false, message: error.message });
       }
       req.log.error(
@@ -372,7 +402,7 @@ module.exports = async function (fastify, opts) {
     try {
       const comment = await findCommentOrFail(req.params.id);
 
-      await deleteCommentRecursive(comment._id);
+      await deleteCommentTree(comment);
 
       fastify.io?.emit("comment:deleted", {
         commentId: req.params.id,
@@ -386,9 +416,9 @@ module.exports = async function (fastify, opts) {
       );
       return { success: true, message: COMMENT_DELETED };
     } catch (error) {
-      if (error.statusCode === 404) {
+      if (error.statusCode === 404 || error.statusCode === 400) {
         return reply
-          .status(404)
+          .status(error.statusCode)
           .send({ success: false, message: error.message });
       }
       req.log.error(
@@ -403,31 +433,31 @@ module.exports = async function (fastify, opts) {
 
   fastify.delete("/replies/:id", async (req, reply) => {
     try {
-      const reply = await findCommentOrFail(req.params.id);
+      const target = await findCommentOrFail(req.params.id);
 
-      if (!reply.parentComment) {
+      if (!target.parentComment) {
         return reply
           .status(400)
           .send({ success: false, message: "این نظر یک ریپلای نیست" });
       }
 
-      await deleteCommentRecursive(reply._id);
+      await deleteCommentTree(target);
 
       fastify.io?.emit("comment:deleted", {
         commentId: req.params.id,
-        postId: reply.post,
-        parentComment: reply.parentComment,
+        postId: target.post,
+        parentComment: target.parentComment,
       });
 
       req.log.info(
-        { deletedReply: reply._id, by: req.user._id },
+        { deletedReply: target._id, by: req.user._id },
         "Reply deleted by admin",
       );
       return { success: true, message: COMMENT_DELETED };
     } catch (error) {
-      if (error.statusCode === 404) {
+      if (error.statusCode === 404 || error.statusCode === 400) {
         return reply
-          .status(404)
+          .status(error.statusCode)
           .send({ success: false, message: error.message });
       }
       req.log.error(
